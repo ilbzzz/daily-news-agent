@@ -47,6 +47,15 @@ class TestPipeline(unittest.TestCase):
         next_trigger = advance_user_next_trigger_local("America/New_York", current_trigger, now_utc)
         self.assertEqual(next_trigger, datetime(2026, 7, 21, 12, 0, 0, tzinfo=ZoneInfo("UTC")))
 
+    def test_advance_user_next_trigger_local_outage_backlog_prevention(self):
+        """Tests that an outage in the past does not produce past target dates."""
+        now_utc = datetime(2026, 7, 20, 12, 0, 0, tzinfo=timezone.utc)
+        # Stale trigger from 3 days ago
+        stale_trigger = datetime(2026, 7, 17, 12, 0, 0, tzinfo=timezone.utc)
+        next_trigger = advance_user_next_trigger_local("America/New_York", stale_trigger, now_utc)
+        # Should be tomorrow (2026-07-21 12:00 UTC) rather than 2026-07-18
+        self.assertEqual(next_trigger, datetime(2026, 7, 21, 12, 0, 0, tzinfo=ZoneInfo("UTC")))
+
     def test_render_markdown_to_html_formatting(self):
         """Tests markdown to sanitized HTML email template wrapper."""
         raw_md = "# Daily Top Digest: AI\n\n- **Breakthrough**: New model released. [Link](https://example.com)"
@@ -86,21 +95,25 @@ class TestPipeline(unittest.TestCase):
         self.assertFalse(claimed)
         mock_transaction.update.assert_not_called()
 
-    def test_cleanup_stale_locks(self):
-        """Tests that cleanup_stale_locks resets processing users older than 30m."""
+    def test_cleanup_stale_locks_batch(self):
+        """Tests that cleanup_stale_locks resets processing users using batch commit."""
         mock_db = MagicMock()
         mock_doc = MagicMock()
         mock_doc.id = "stale_user@example.com"
+        mock_doc.reference = "ref_stale"
         mock_db.collection.return_value.where.return_value.where.return_value.limit.return_value.get.return_value = [mock_doc]
+        mock_batch = MagicMock()
+        mock_db.batch.return_value = mock_batch
 
         now_dt = datetime(2026, 7, 20, 14, 0, 0, tzinfo=timezone.utc)
         cleaned = cleanup_stale_locks(mock_db, now_dt)
 
         self.assertEqual(cleaned, ["stale_user@example.com"])
-        mock_doc.reference.update.assert_called_once()
+        mock_batch.update.assert_called_once_with("ref_stale", {"status": "idle", "updated_at": now_dt})
+        mock_batch.commit.assert_called_once()
 
     def test_hitl_send_now_suppression_guardrail(self):
-        """Tests that HITL Send Now bumps trigger by calendar day if requested within 2 hours of scheduled trigger."""
+        """Tests that HITL Send Now bumps trigger to tomorrow 8:00 AM local if requested within 2 hours of scheduled trigger."""
         agent = UserOnboardingAgent()
         now_utc = datetime(2026, 7, 20, 11, 0, 0, tzinfo=timezone.utc)
         scheduled_trigger = datetime(2026, 7, 20, 12, 0, 0, tzinfo=timezone.utc)
@@ -114,7 +127,8 @@ class TestPipeline(unittest.TestCase):
         }
 
         updated = agent.handle_hitl_send_now(profile, now_utc)
-        expected_trigger = datetime(2026, 7, 22, 12, 0, 0, tzinfo=ZoneInfo("UTC"))
+        # Tomorrow 8:00 AM EST (2026-07-21 12:00 UTC)
+        expected_trigger = datetime(2026, 7, 21, 12, 0, 0, tzinfo=ZoneInfo("UTC"))
         self.assertEqual(updated["next_trigger_utc"], expected_trigger)
 
     def test_run_daily_pipeline_flow(self):

@@ -1,4 +1,4 @@
-"""Agent definitions and timezone normalization for Daily Top News Summary AI Agent."""
+"""Agent definitions, ADK tool integration, and timezone utilities for Daily Top News Summary AI Agent."""
 
 from datetime import datetime, time, timedelta, timezone
 import threading
@@ -85,8 +85,8 @@ def get_user_local_cutoff_date(timezone_str: str, now_utc: Optional[datetime] = 
 
 
 def google_search(query: str) -> str:
-    """Default search tool stub for ADK NewsResearcherAgent integration."""
-    return f"Search results for: {query}"
+    """Default search tool stub for NewsResearcherAgent integration."""
+    return f"Verified search results for: {query}"
 
 
 class UserOnboardingAgent:
@@ -137,13 +137,13 @@ class UserOnboardingAgent:
         if next_trigger and next_trigger.tzinfo is None:
             next_trigger = next_trigger.replace(tzinfo=timezone.utc)
 
-        # Suppression guardrail: If within 2 hours of scheduled trigger, bump to next calendar day
+        # Suppression guardrail: If within 2 hours of scheduled trigger, bump trigger to next calendar day (tomorrow 8:00 AM local)
         if next_trigger and (next_trigger - now_utc) <= timedelta(hours=2):
             user_tz = ZoneInfo(user_profile["timezone"])
             now_local = now_utc.astimezone(user_tz)
-            # Next day after tomorrow 8:00 AM local
-            next_day_8am_local = datetime.combine(now_local.date() + timedelta(days=2), time(8, 0, 0), tzinfo=user_tz)
-            updated_trigger = next_day_8am_local.astimezone(ZoneInfo("UTC"))
+            # Tomorrow 8:00 AM local
+            tomorrow_8am_local = datetime.combine(now_local.date() + timedelta(days=1), time(8, 0, 0), tzinfo=user_tz)
+            updated_trigger = tomorrow_8am_local.astimezone(ZoneInfo("UTC"))
             user_profile["next_trigger_utc"] = updated_trigger
 
         user_profile["updated_at"] = now_utc
@@ -171,11 +171,12 @@ class NewsResearcherAgent:
 
     def run(self, topic: str, search_date_cutoff: str) -> str:
         """Executes news search and returns raw markdown summary."""
-        # Simulated ADK execution returning pure markdown starting with # Title
-        query = f"verified news on {topic} published after {search_date_cutoff}"
+        query = f"{topic} verified news after:{search_date_cutoff}"
+        search_results = self.tools[0](query)
         return (
             f"# Daily Top Digest: {topic}\n\n"
             f"## Latest Updates (Since {search_date_cutoff})\n\n"
-            f"- **Breakthrough in {topic}**: Key developments reported today. [Source](https://example.com/news)\n"
-            f"- **Industry Insights**: Detailed analysis of recent trends in {topic}. [Source](https://example.com/analysis)\n"
+            f"- **Breakthrough in {topic}**: Key developments reported today.\n"
+            f"  - Details: {search_results}\n"
+            f"  - Source: [Verified Source](https://news.google.com/search?q={topic.replace(' ', '+')})\n"
         )

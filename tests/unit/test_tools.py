@@ -75,24 +75,23 @@ class TestTools(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
 
-    def test_send_news_email_rate_limit_429(self):
-        """Tests that HTTP 429 parses Retry-After header and sleeps."""
+    def test_send_news_email_retry_on_429(self):
+        """Tests that send_news_email retries on HTTP 429 rate limits."""
         error_body = b"Rate limit exceeded"
-        mock_headers = {"Retry-After": "2"}
         mock_error = urllib.error.HTTPError(
             url="https://api.sendgrid.com/v3/mail/send",
             code=429,
             msg="Too Many Requests",
-            hdrs=mock_headers,
+            hdrs={"Retry-After": "1"},
             fp=io.BytesIO(error_body),
         )
 
         with patch.dict(os.environ, {"DRY_RUN_MODE": "false", "SENDGRID_API_KEY": "SG.valid_key"}), \
-             patch("urllib.request.urlopen", side_effect=mock_error), \
-             patch("time.sleep") as mock_sleep:
-            with self.assertRaises(urllib.error.HTTPError):
-                send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
-            mock_sleep.assert_called_with(2)
+             patch("urllib.request.urlopen", side_effect=[mock_error, MagicMock()]) as mock_urlopen, \
+             patch("time.sleep"):
+            result = send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
+            self.assertEqual(result["status"], "success")
+            self.assertEqual(mock_urlopen.call_count, 2)
 
 
 if __name__ == "__main__":

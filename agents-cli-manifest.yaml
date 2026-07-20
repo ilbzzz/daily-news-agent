@@ -2,6 +2,8 @@ version: "1.0"
 name: daily_news_agent
 description: "Daily Top News Summary AI Agent"
 
+entrypoint: "app.main:run_server"
+
 agents:
   onboarding_agent:
     entry: app.agent:UserOnboardingAgent

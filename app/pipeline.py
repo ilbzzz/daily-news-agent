@@ -55,9 +55,7 @@ def _fallback_markdown_to_html(raw_markdown: str) -> str:
                 html_lines.append("<ul>")
                 in_list = True
             item_text = stripped[2:].strip()
-            # Convert bold **text**
             item_text = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", item_text)
-            # Convert links [text](url)
             item_text = re.sub(r"\[(.*?)\]\((.*?)\)", r'<a href="\2">\1</a>', item_text)
             html_lines.append(f"<li>{item_text}</li>")
         else:
@@ -75,7 +73,7 @@ def _fallback_markdown_to_html(raw_markdown: str) -> str:
 
 
 def cleanup_stale_locks(db: Any, now_dt: Optional[datetime] = None) -> List[str]:
-    """Finds users stuck in 'processing' status for > 30 minutes (limit 50) and resets them to 'idle'."""
+    """Finds users stuck in 'processing' status for > 30 minutes (limit 50) and resets them using batch write."""
     if now_dt is None:
         now_dt = datetime.now(timezone.utc)
     elif now_dt.tzinfo is None:
@@ -92,9 +90,12 @@ def cleanup_stale_locks(db: Any, now_dt: Optional[datetime] = None) -> List[str]
             .limit(50)
             .get()
         )
-        for doc in stale_docs:
-            doc.reference.update({"status": "idle", "updated_at": now_dt})
-            cleaned_user_ids.append(doc.id)
+        if stale_docs:
+            batch = db.batch()
+            for doc in stale_docs:
+                batch.update(doc.reference, {"status": "idle", "updated_at": now_dt})
+                cleaned_user_ids.append(doc.id)
+            batch.commit()
 
     return cleaned_user_ids
 
@@ -113,19 +114,16 @@ def render_markdown_to_html(raw_markdown: str) -> str:
     if not raw_markdown or not raw_markdown.strip():
         raw_markdown = "# Daily Top Digest\n\nNo Major News Today."
 
-    # Convert markdown to basic HTML using markdown library if present, or fallback parser
     if markdown is not None:
         html_body = markdown.markdown(raw_markdown, extensions=["extra"])
     else:
         html_body = _fallback_markdown_to_html(raw_markdown)
 
-    # Sanitize HTML using nh3 if available
     if nh3 is not None:
         clean_html = nh3.clean(html_body)
     else:
         clean_html = html_body
 
-    # Responsive HTML Email Template with Inline CSS
     email_template = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -156,7 +154,7 @@ def render_markdown_to_html(raw_markdown: str) -> str:
 
 
 def advance_user_next_trigger_local(timezone_str: str, current_trigger_utc: Optional[datetime], now_utc: Optional[datetime] = None) -> datetime:
-    """Advances next_trigger_utc by exactly 1 calendar day in the user's local timezone (preserving local 8:00 AM delivery)."""
+    """Advances next_trigger_utc to tomorrow's 8:00 AM local time, preventing backlog spam catch-up loops."""
     user_tz = ZoneInfo(timezone_str)
     if now_utc is None:
         now_utc = datetime.now(timezone.utc)
@@ -169,7 +167,9 @@ def advance_user_next_trigger_local(timezone_str: str, current_trigger_utc: Opti
         if current_trigger_utc.tzinfo is None:
             current_trigger_utc = current_trigger_utc.replace(tzinfo=timezone.utc)
         curr_local = current_trigger_utc.astimezone(user_tz)
-        target_date = curr_local.date() + timedelta(days=1)
+        # Protect against stale/past triggers: Always ensure target_date is tomorrow relative to now_local
+        base_date = max(curr_local.date(), now_local.date())
+        target_date = base_date + timedelta(days=1)
     else:
         target_date = now_local.date() + timedelta(days=1)
 

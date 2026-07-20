@@ -1,0 +1,16 @@
+[
+  {
+    "topic": "Artificial Intelligence",
+    "search_date_cutoff": "2026-07-19",
+    "expected_header": "# Daily Top Digest: Artificial Intelligence",
+    "expected_citation_pattern": "\\[[^\\]]+\\]\\(https?://[^\\)]+\\)",
+    "fallback_text": "No Major News Today"
+  },
+  {
+    "topic": "Quantum Computing",
+    "search_date_cutoff": "2026-07-19",
+    "expected_header": "# Daily Top Digest: Quantum Computing",
+    "expected_citation_pattern": "\\[[^\\]]+\\]\\(https?://[^\\)]+\\)",
+    "fallback_text": "No Major News Today"
+  }
+]

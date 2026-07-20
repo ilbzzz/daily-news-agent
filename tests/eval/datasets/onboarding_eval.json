@@ -1,0 +1,23 @@
+[
+  {
+    "input": "Sign me up for AI news at alice@example.com in EST timezone",
+    "expected_email": "alice@example.com",
+    "expected_topic": "AI news",
+    "expected_timezone": "America/New_York",
+    "expected_hitl_prompt": "Send instant test digest now? (Yes/No)"
+  },
+  {
+    "input": "I want quantum computing updates to bob@tech.org, timezone PST",
+    "expected_email": "bob@tech.org",
+    "expected_topic": "quantum computing updates",
+    "expected_timezone": "America/Los_Angeles",
+    "expected_hitl_prompt": "Send instant test digest now? (Yes/No)"
+  },
+  {
+    "input": "Subscribe charlie@company.com to Biotech news in IST timezone",
+    "expected_email": "charlie@company.com",
+    "expected_topic": "Biotech news",
+    "expected_timezone": "Asia/Kolkata",
+    "expected_hitl_prompt": "Send instant test digest now? (Yes/No)"
+  }
+]

@@ -1,0 +1,21 @@
+version: "1.0"
+eval_name: daily_news_agent_eval
+evaluators:
+  - name: date_grounding
+    type: custom_match
+    threshold: 0.95
+    description: "Evaluates that search date cutoff is strictly respected."
+  - name: pure_markdown_format
+    type: format_check
+    threshold: 1.0
+    description: "Evaluates that NewsResearcherAgent output contains no preamble."
+  - name: timezone_normalization
+    type: exact_match
+    threshold: 1.0
+    description: "Evaluates correct IANA canonical timezone mapping."
+
+datasets:
+  - name: onboarding
+    path: datasets/onboarding_eval.json
+  - name: news_summary
+    path: datasets/news_summary_eval.json

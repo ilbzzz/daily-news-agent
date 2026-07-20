@@ -1,0 +1,30 @@
+version: "1.0"
+name: daily_news_agent
+description: "Daily Top News Summary AI Agent"
+
+agents:
+  onboarding_agent:
+    entry: app.agent:UserOnboardingAgent
+    description: "Handles user topic onboarding, timezone normalization, and HITL verification."
+  news_researcher_agent:
+    entry: app.agent:NewsResearcherAgent
+    description: "Performs grounded news search based on user topic and date cutoff."
+
+tools:
+  - name: send_news_email
+    entry: app.tools:send_news_email
+  - name: validate_and_sanitize_email
+    entry: app.tools:validate_and_sanitize_email
+  - name: normalize_timezone
+    entry: app.agent:normalize_timezone
+
+environment:
+  SENDGRID_API_KEY: "${SENDGRID_API_KEY}"
+  SENDGRID_SENDER_EMAIL: "${SENDGRID_SENDER_EMAIL}"
+  DRY_RUN_MODE: "${DRY_RUN_MODE}"
+  FIRESTORE_COLLECTION: "${FIRESTORE_COLLECTION}"
+  GCP_PROJECT: "${GCP_PROJECT}"
+
+runtime:
+  target: cloud_run
+  scheduler_cron: "*/30 * * * *"

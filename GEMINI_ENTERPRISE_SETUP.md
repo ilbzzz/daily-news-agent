@@ -165,11 +165,14 @@ gcloud run deploy daily-news-agent-runner \
 
 ### Step 4.3: Verify Deployment Endpoints
 
-Test the Cloud Run health check and trigger endpoints:
+Retrieve your deployed Cloud Run URL and test the health check and trigger endpoints:
 
 ```bash
+# Get assigned Cloud Run Service URL
+export SERVICE_URL=$(gcloud run services describe daily-news-agent-runner --region us-central1 --format="value(status.url)")
+
 # Health Check Endpoint
-curl -X GET https://daily-news-agent-runner-xyz.a.run.app/healthz
+curl -X GET ${SERVICE_URL}/healthz
 
 # Response:
 # {"status": "healthy", "service": "daily_news_agent"}
@@ -209,9 +212,11 @@ agents-cli publish gemini-enterprise \
 #### Option B: A2A (Agent-to-Agent) Mode on Cloud Run
 
 ```bash
+export SERVICE_URL=$(gcloud run services describe daily-news-agent-runner --region us-central1 --format="value(status.url)")
+
 agents-cli publish gemini-enterprise \
   --registration-type a2a \
-  --agent-card-url https://daily-news-agent-runner-xyz.a.run.app/.well-known/agent-card.json \
+  --agent-card-url ${SERVICE_URL}/.well-known/agent-card.json \
   --gemini-enterprise-app-id projects/your-gcp-project-id/locations/global/collections/default_collection/engines/daily-news-app \
   --display-name "Daily Top News Summary AI Agent (A2A)"
 ```
@@ -242,7 +247,9 @@ agent.register_user(
 Trigger the pipeline POST endpoint to verify search, HTML rendering, and email dispatch:
 
 ```bash
-curl -X POST https://daily-news-agent-runner-xyz.a.run.app/run-pipeline
+export SERVICE_URL=$(gcloud run services describe daily-news-agent-runner --region us-central1 --format="value(status.url)")
+
+curl -X POST ${SERVICE_URL}/run-pipeline
 ```
 
 --------------------------------------------------------------------------------

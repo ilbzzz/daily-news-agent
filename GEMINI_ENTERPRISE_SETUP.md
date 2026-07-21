@@ -1,8 +1,6 @@
 # Gemini Enterprise Setup & Deployment Guide: Daily Top News Summary AI Agent
 
-This step-by-step guide details how to build, test, deploy, and register the
-**Daily Top News Summary AI Agent** on Google Cloud Platform (GCP) and **Gemini
-Enterprise Agent Platform**.
+This step-by-step guide details how to build, test, deploy via **Agent Runtime (Vertex AI Reasoning Engine)**, and register the **Daily Top News Summary AI Agent** on Google Cloud Platform (GCP) and **Gemini Enterprise Agent Platform**.
 
 --------------------------------------------------------------------------------
 
@@ -19,7 +17,7 @@ Ensure you have the following installed on your machine:
 
 ### Required GCP IAM Permissions
 
-- `roles/run.admin` (Cloud Run Service Administration)
+- `roles/aiplatform.admin` (Vertex AI / Agent Runtime Administration)
 - `roles/datastore.owner` (Firestore Database Administration)
 - `roles/secretmanager.admin` (Secret Manager Administration)
 - `roles/cloudscheduler.admin` (Cloud Scheduler Job Creation)
@@ -35,43 +33,15 @@ export PROJECT_ID="your-gcp-project-id"
 
 # Enable required GCP APIs
 gcloud services enable \
-  run.googleapis.com \
+  aiplatform.googleapis.com \
+  cloudbuild.googleapis.com \
   firestore.googleapis.com \
   secretmanager.googleapis.com \
   cloudscheduler.googleapis.com \
-  discoveryengine.googleapis.com \
-  aiplatform.googleapis.com \
-  cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com
+  discoveryengine.googleapis.com
 
 # Create Default Firestore Database (if not already initialized in project)
 gcloud firestore databases create --location=us-central1 --type=firestore-native
-
-# Initialize App Engine / Cloud Scheduler project location (required once per GCP project)
-gcloud app create --region=us-central1 || true
-
-# Grant required Cloud Build permissions to default compute service account
-export PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
-
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role="roles/storage.admin"
-
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role="roles/cloudbuild.builds.builder"
-
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role="roles/artifactregistry.writer"
-
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role="roles/logging.logWriter"
-
-gcloud projects add-iam-policy-binding ${PROJECT_ID} \
-  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-  --role="roles/secretmanager.secretAccessor"
 ```
 
 --------------------------------------------------------------------------------
@@ -82,7 +52,7 @@ gcloud projects add-iam-policy-binding ${PROJECT_ID} \
 
 ```bash
 # Clone the repository and navigate into the project directory
-git clone <your-github-repo-url>/daily-news-agent.git
+git clone https://github.com/ilbzzz/daily-news-agent.git
 cd daily-news-agent
 
 # Create Python Virtual Environment
@@ -122,9 +92,8 @@ cp terraform/terraform.tfvars.example terraform/terraform.tfvars
 Configure your project-specific values in `terraform/terraform.tfvars`:
 
 ```hcl
-gcp_project                       = "your-gcp-project-id" # Set your actual GCP Project ID
-gcp_region                        = "us-central1"
-cloud_run_endpoint                = "https://daily-news-agent-runner-xyz.a.run.app/run-pipeline"
+gcp_project = "your-gcp-project-id" # Set your actual GCP Project ID
+gcp_region  = "us-central1"
 ```
 
 ### Step 3.2: Initialize and Apply Infrastructure
@@ -142,7 +111,7 @@ cd ..
 
 --------------------------------------------------------------------------------
 
-## 4. Deploying the Service to Cloud Run
+## 4. Deploying to Agent Runtime (Vertex AI Reasoning Engine)
 
 ### Step 4.1: Store SendGrid API Key in Secret Manager
 
@@ -150,94 +119,59 @@ cd ..
 echo -n "SG.your_actual_sendgrid_api_key" | gcloud secrets versions add sendgrid-api-key --data-file=-
 ```
 
-*(If testing without a SendGrid account, pass a placeholder string like `SG.dummy_key` and set `DRY_RUN_MODE=true` in Cloud Run).*
+*(If testing without a SendGrid account, pass a placeholder string like `SG.dummy_key` and set `DRY_RUN_MODE=true`).*
 
-### Step 4.2: Build and Deploy to Cloud Run
+### Step 4.2: Ensure `.gcloudignore` Excludes Heavy Build Artifacts
 
-Deploy the application web service to Cloud Run. Cloud Run automatically uses the included [`Dockerfile`](Dockerfile) to build the container:
-
-```bash
-gcloud run deploy daily-news-agent-runner \
-  --source . \
-  --region us-central1 \
-  --platform managed \
-  --allow-unauthenticated \
-  --set-env-vars DRY_RUN_MODE=false,FIRESTORE_COLLECTION=users,GCP_PROJECT=${PROJECT_ID},SENDGRID_SENDER_EMAIL=digest@newsagent.ai \
-  --set-secrets SENDGRID_API_KEY=sendgrid-api-key:latest
-```
-
-### Step 4.3: Verify Deployment Endpoints
-
-Retrieve your assigned Cloud Run URL and test the health check and trigger endpoints:
+Ensure `.gcloudignore` and `.gitignore` exist in the repository so `.venv`, `__pycache__`, and build caches are not packaged into the deployment payload (which must be < 8 MB):
 
 ```bash
-# Get assigned Cloud Run Service URL
-export SERVICE_URL=$(gcloud run services describe daily-news-agent-runner --region us-central1 --format="value(status.url)")
-
-# Option A: Allow Unauthenticated (Public) Ingress Access
-gcloud run services add-iam-policy-binding daily-news-agent-runner \
-  --region us-central1 \
-  --member="allUsers" \
-  --role="roles/run.invoker"
-
-# Health Check Endpoint
-curl -X GET -H "Authorization: Bearer $(gcloud auth print-identity-token)" ${SERVICE_URL}
-
-# Response:
-# {"status": "healthy", "service": "daily_news_agent"}
+# Verify ignore files are present
+ls -a .gcloudignore .gitignore
 ```
+
+### Step 4.3: Deploy to Agent Runtime via `agents-cli`
+
+Deploy the source code directly to Vertex AI Agent Runtime:
+
+```bash
+agents-cli deploy \
+  --project ${PROJECT_ID} \
+  --region us-central1 \
+  --deployment-target agent_runtime \
+  --no-confirm-project \
+  --no-wait
+```
+
+### Step 4.4: Verify Deployment Status
+
+Check the status of your background operation:
+
+> **Note for Cloud Shell**: Run `gcloud auth application-default login` if needed to authenticate Application Default Credentials.
+
+```bash
+agents-cli deploy --status --deployment-target agent_runtime
+```
+
+Once deployment completes, `agents-cli` auto-generates `deployment_metadata.json` containing the assigned `remote_agent_runtime_id` (e.g. `projects/${PROJECT_NUMBER}/locations/us-central1/reasoningEngines/1966737680288972800`).
 
 --------------------------------------------------------------------------------
 
 ## 5. Registering with Gemini Enterprise Agent Platform
 
-### Step 5.1: Grant Discovery Engine Invoker IAM Permissions
+### Step 5.1: Publish to Gemini Enterprise via `agents-cli`
 
-Grant the Gemini Enterprise Discovery Engine service account permission to invoke the Cloud Run service:
-
-```bash
-export PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
-
-# Provision Discovery Engine service account if not already created
-gcloud beta services identity create --service=discoveryengine.googleapis.com --project=${PROJECT_ID} || true
-
-# Grant invoker permissions to Discovery Engine service account
-gcloud run services add-iam-policy-binding daily-news-agent-runner \
-  --region us-central1 \
-  --member "serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
-  --role "roles/run.servicesInvoker"
-```
-
-### Step 5.2: Publish to Gemini Enterprise via `agents-cli`
-
-Publish the agent to your Gemini Enterprise App:
-
-#### Option A: A2A (Agent-to-Agent) Mode for Cloud Run Deployments (Recommended)
-
-When deployed on Cloud Run, register your agent using the A2A protocol and agent card endpoint:
+Publish your Agent Runtime Reasoning Engine deployment to your Gemini Enterprise App:
 
 ```bash
-export SERVICE_URL=$(gcloud run services describe daily-news-agent-runner --region us-central1 --format="value(status.url)")
+# Extract the Agent Runtime ID from deployment_metadata.json
+export AGENT_RUNTIME_ID=$(jq -r '.remote_agent_runtime_id' deployment_metadata.json)
 
-agents-cli publish gemini-enterprise \
-  --registration-type a2a \
-  --agent-card-url ${SERVICE_URL}/.well-known/agent-card.json \
-  --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app \
-  --display-name "Daily Top News Summary AI Agent"
-```
-
-#### Option B: ADK Reasoning Engine Mode (for Vertex AI Reasoning Engine Deployments)
-
-If deployed via Vertex AI Reasoning Engine / Agent Runtime:
-
-```bash
 agents-cli publish gemini-enterprise \
   --registration-type adk \
-  --agent-runtime-id projects/${PROJECT_ID}/locations/us-central1/reasoningEngines/your-reasoning-engine-id \
-  --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app \
-  --display-name "Daily Top News Summary AI Agent" \
-  --description "Personalized daily news digest agent delivering 8:00 AM summaries." \
-  --tool-description "Searches verified news, synthesizes takeaways, and dispatches HTML email digests."
+  --agent-runtime-id ${AGENT_RUNTIME_ID} \
+  --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app_1784599201724 \
+  --display-name "Daily Top News Summary AI Agent"
 ```
 
 --------------------------------------------------------------------------------
@@ -261,25 +195,15 @@ agent.register_user(
 )
 ```
 
-### Step 6.2: Trigger Manual Pipeline Run
-
-Trigger the pipeline POST endpoint to verify search, HTML rendering, and email dispatch:
-
-```bash
-export SERVICE_URL=$(gcloud run services describe daily-news-agent-runner --region us-central1 --format="value(status.url)")
-
-curl -X POST ${SERVICE_URL}/run-pipeline
-```
-
 --------------------------------------------------------------------------------
 
 ## 7. Troubleshooting
 
 | Issue | Cause | Solution |
 | :--- | :--- | :--- |
-| **`invalid token JSON from metadata: EOF`** | Cloud Shell metadata server token cache expired | Run `export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)` in Cloud Shell. |
-| **Cloud Build Permission Denied** | Compute SA missing IAM builder roles | Grant `storage.admin`, `cloudbuild.builds.builder`, `artifactregistry.writer`, `logging.logWriter`, and `secretmanager.secretAccessor` to `${PROJECT_NUMBER}-compute@developer.gserviceaccount.com`. |
-| **HTTP 403 on Cloud Scheduler Trigger** | Missing IAM OIDC permissions | Ensure `roles/run.invoker` is granted to `daily-news-scheduler@<project-id>.iam.gserviceaccount.com`. |
-| **SendGrid 401 Unauthorized** | Invalid API Key | Verify key in Secret Manager or set `DRY_RUN_MODE=true` in Cloud Run env vars. |
-| **Stale Lock Stuck Records** | Cloud Run crash/timeout | Pipelines automatically clean up records stuck > 30 mins via `cleanup_stale_locks()`. |
-| **Gemini Enterprise Registration Error** | Missing Discovery Engine Editor | Verify user has `roles/discoveryengine.editor` permissions in GCP Console. |
+| **`Request payload size exceeds the limit: 8388608 bytes`** | Unfiltered virtualenvs or caches packaged during deploy | Create `.gcloudignore` and exclude `venv/`, `.venv/`, `__pycache__/`, `.terraform/`. |
+| **`google.auth.exceptions.RefreshError` in Cloud Shell** | Cloud Shell metadata server token refresh failure | Run `gcloud auth application-default login` or `export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)`. |
+| **`No deployment target configured` on `--status`** | Missing `--deployment-target` flag | Pass `--deployment-target agent_runtime` when checking status. |
+| **SendGrid 401 Unauthorized** | Invalid API Key | Verify key in Secret Manager or set `DRY_RUN_MODE=true` in environment configuration. |
+| **Stale Lock Stuck Records** | Unhandled pipeline failure | Pipelines automatically clean up records stuck > 30 mins via `cleanup_stale_locks()`. |
+| **Gemini Enterprise Registration Error** | Missing Discovery Engine Editor | Verify user has `roles/discoveryengine.editor` or `roles/discoveryengine.admin` permissions in GCP Console. |

@@ -277,11 +277,30 @@ class DailyNewsAgent:
         pass
     return self._db
 
-  def query(self, prompt: str = "", **kwargs: Any) -> str:
-    """Main entrypoint for processing conversational user queries."""
-    user_prompt = prompt or kwargs.get("input") or kwargs.get("message") or ""
+  def query(
+      self,
+      prompt: Optional[str] = None,
+      input: Optional[str] = None,
+      message: Optional[str] = None,
+      **kwargs: Any,
+  ) -> str:
+    """Main entrypoint for processing conversational user queries from Agent Runtime or Gemini Enterprise."""
+    user_prompt = (
+        prompt
+        or input
+        or message
+        or kwargs.get("user_input")
+        or kwargs.get("query")
+        or ""
+    )
+    if isinstance(user_prompt, dict):
+      user_prompt = (
+          user_prompt.get("text")
+          or user_prompt.get("content")
+          or str(user_prompt)
+      )
     if not user_prompt or not isinstance(user_prompt, str):
-      return "Please provide a valid question or command."
+      user_prompt = "Hello"
 
     prompt_lower = user_prompt.lower()
 
@@ -308,6 +327,6 @@ class DailyNewsAgent:
 
     # Default conversational fallback response
     return (
-        f"Daily News AI Agent received your request: '{prompt}'.\n"
+        f"Daily News AI Agent received your request: '{user_prompt}'.\n"
         "I deliver daily 8:00 AM news digests tailored to your topic and timezone!"
     )

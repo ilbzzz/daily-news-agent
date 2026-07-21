@@ -33,3 +33,7 @@ environment:
 runtime:
   target: agent_runtime
   scheduler_cron: "*/30 * * * *"
+
+create_params:
+  deployment_target: agent_runtime
+

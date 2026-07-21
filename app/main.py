@@ -86,9 +86,15 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
       self.wfile.write(json.dumps({"error": "Not found"}).encode("utf-8"))
 
   def do_POST(self):
-    """Cloud Scheduler pipeline execution trigger endpoint."""
-    # Handle POST /run-pipeline triggered by Cloud Scheduler
-    if self.path in ("/run-pipeline", "/"):
+    """Cloud Scheduler and Agent Runtime query endpoint."""
+    # Handle POST requests from Cloud Scheduler or Vertex AI Reasoning Engine
+    if self.path in (
+        "/run-pipeline",
+        "/",
+        "/api/stream_reasoning_engine",
+        "/api/query",
+        "/query",
+    ):
       try:
         # Initialize Firestore client if library is present
         db = firestore.Client() if firestore is not None else None

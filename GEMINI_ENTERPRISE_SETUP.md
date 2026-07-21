@@ -53,7 +53,9 @@ gcloud firestore databases create --location=us-central1 --type=firestore-native
 ### Step 2.1: Clone and Environment Setup
 
 ```bash
-cd google3/experimental/users/xinweizhang/git/daily-news-agent
+# Clone the repository and navigate into the project directory
+git clone <your-github-repo-url>/daily-news-agent.git
+cd daily-news-agent
 
 # Create Python Virtual Environment
 python3 -m venv venv
@@ -86,7 +88,7 @@ Provision the Secret Manager key, Firestore composite indexes (`user_due_index`,
 ### Step 3.1: Configure Variables
 
 Create a `terraform/terraform.tfvars` file by copying the template
-[terraform/terraform.tfvars.example](file:///google/src/cloud/xinweizhang/ai-agents/google3/experimental/users/xinweizhang/git/daily-news-agent/terraform/terraform.tfvars.example):
+[`terraform/terraform.tfvars.example`](terraform/terraform.tfvars.example):
 
 ```bash
 cp terraform/terraform.tfvars.example terraform/terraform.tfvars

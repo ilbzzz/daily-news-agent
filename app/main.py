@@ -27,6 +27,12 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
     # Handle GET /.well-known/agent-card.json requests for A2A registration
     if self.path in ("/.well-known/agent-card.json", "/agent-card.json"):
       self._set_headers(200)
+      host_header = self.headers.get("Host", "")
+      base_url = (
+          f"https://{host_header}"
+          if host_header
+          else "https://daily-news-agent-runner.a.run.app"
+      )
       card_payload = {
           "protocolVersion": "1.0",
           "name": "Daily Top News Summary AI Agent",
@@ -34,6 +40,7 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
               "Personalized daily news digest agent delivering 8:00 AM summaries."
           ),
           "version": "1.0.0",
+          "url": base_url,
           "defaultInputModes": ["text"],
           "defaultOutputModes": ["text"],
           "capabilities": {"streaming": False},

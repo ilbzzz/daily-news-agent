@@ -3,6 +3,7 @@
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import os
+import traceback
 from app.pipeline import run_daily_pipeline
 
 try:
@@ -96,8 +97,14 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
         "/query",
     ):
       try:
+        # Determine GCP Project ID with fallbacks
+        project_id = (
+            os.environ.get("GCP_PROJECT")
+            or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or "xz-ai-agents"
+        )
         # Initialize Firestore client if library is present
-        db = firestore.Client() if firestore is not None else None
+        db = firestore.Client(project=project_id) if firestore is not None else None
 
         # Execute daily pipeline run
         results = run_daily_pipeline(db=db)
@@ -106,6 +113,8 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
         self._set_headers(200)
         self.wfile.write(json.dumps(results).encode("utf-8"))
       except Exception as e:
+        # Log full exception traceback to stderr for Cloud Logging
+        traceback.print_exc()
         # Return HTTP 500 Internal Server Error if pipeline encounters an unhandled exception
         self._set_headers(500)
         self.wfile.write(

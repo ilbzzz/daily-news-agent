@@ -1,9 +1,15 @@
 """Agent definitions, ADK tool integration, and timezone utilities for Daily Top News Summary AI Agent."""
 
 from datetime import datetime, time, timedelta, timezone
+import os
 import threading
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo, available_timezones
+
+try:
+  from google.cloud import firestore
+except ImportError:
+  firestore = None
 
 from app.tools import validate_and_sanitize_email
 
@@ -241,9 +247,35 @@ class DailyNewsAgent:
   """Root ADK Conversational Agent exposing query() for Gemini Enterprise chat interface."""
 
   def __init__(self, db_client: Any = None):
-    self.db = db_client
-    self.onboarding = UserOnboardingAgent(db_client=db_client)
-    self.researcher = NewsResearcherAgent()
+    self._db = db_client
+
+  def set_up(self):
+    """Called by Vertex AI Reasoning Engine upon initialization in remote container."""
+    try:
+      project_id = (
+          os.environ.get("GCP_PROJECT")
+          or os.environ.get("GOOGLE_CLOUD_PROJECT")
+          or "xz-ai-agents"
+      )
+      if firestore is not None:
+        self._db = firestore.Client(project=project_id)
+    except Exception:
+      pass
+
+  @property
+  def db(self):
+    """Lazily initialized Firestore client property."""
+    if self._db is None and firestore is not None:
+      try:
+        project_id = (
+            os.environ.get("GCP_PROJECT")
+            or os.environ.get("GOOGLE_CLOUD_PROJECT")
+            or "xz-ai-agents"
+        )
+        self._db = firestore.Client(project=project_id)
+      except Exception:
+        pass
+    return self._db
 
   def query(self, prompt: str) -> str:
     """Main entrypoint for processing conversational user queries."""

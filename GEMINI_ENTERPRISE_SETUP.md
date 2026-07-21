@@ -239,7 +239,4 @@ curl -X POST https://daily-news-agent-runner-xyz.a.run.app/run-pipeline
 | **Stale Lock Stuck | Cloud Run         | Pipelines automatically clean up   |
 : Records**          : crash/timeout     : records stuck > 30 mins via        :
 :                    :                   : `cleanup_stale_locks()`.           :
-| **Gemini           | Missing Discovery | Verify user has                    |
-: Enterprise         : Engine Editor     : `roles/discoveryengine.editor`     :
-: Registration       :                   : permissions in GCP Console.        :
-: Error**            :                   :                                    :
+| **`invalid token JSON from metadata: EOF`** | Cloud Shell metadata server token cache expired | Run `export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)` to pass token directly. |

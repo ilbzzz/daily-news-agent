@@ -165,13 +165,16 @@ gcloud run deploy daily-news-agent-runner \
 
 ### Step 4.3: Verify Deployment Endpoints
 
-Retrieve your assigned Cloud Run URL and test the health check and trigger endpoints:
+Retrieve your assigned Cloud Run URL, ensure 100% traffic is routed to the latest revision, and test the endpoints:
 
 ```bash
 # Get assigned Cloud Run Service URL
 export SERVICE_URL=$(gcloud run services describe daily-news-agent-runner --region us-central1 --format="value(status.url)")
 
-# Option A: Allow Unauthenticated (Public) Ingress Access
+# Ensure 100% of traffic is allocated to the latest ready revision
+gcloud run services update-traffic daily-news-agent-runner --region us-central1 --to-latest
+
+# Option A: Allow Unauthenticated (Public) Access
 gcloud run services add-iam-policy-binding daily-news-agent-runner \
   --region us-central1 \
   --member="allUsers" \
@@ -179,8 +182,8 @@ gcloud run services add-iam-policy-binding daily-news-agent-runner \
 
 curl -X GET ${SERVICE_URL}/healthz
 
-# Option B: Authenticated Ingress Request (using GCP Identity Token)
-curl -X GET -H "Authorization: Bearer $(gcloud auth print-identity-token)" ${SERVICE_URL}/healthz
+# Option B: Authenticated Request (Requires --audience targeting Cloud Run URL)
+curl -X GET -H "Authorization: Bearer $(gcloud auth print-identity-token --audience=${SERVICE_URL})" ${SERVICE_URL}/healthz
 
 # Response:
 # {"status": "healthy", "service": "daily_news_agent"}

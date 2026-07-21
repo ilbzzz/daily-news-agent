@@ -277,12 +277,13 @@ class DailyNewsAgent:
         pass
     return self._db
 
-  def query(self, prompt: str) -> str:
+  def query(self, prompt: str = "", **kwargs: Any) -> str:
     """Main entrypoint for processing conversational user queries."""
-    if not prompt or not isinstance(prompt, str):
+    user_prompt = prompt or kwargs.get("input") or kwargs.get("message") or ""
+    if not user_prompt or not isinstance(user_prompt, str):
       return "Please provide a valid question or command."
 
-    prompt_lower = prompt.lower()
+    prompt_lower = user_prompt.lower()
 
     # Handle subscription / onboarding intents
     if "subscribe" in prompt_lower or "register" in prompt_lower:

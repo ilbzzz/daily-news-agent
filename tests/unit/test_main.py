@@ -59,11 +59,11 @@ class TestMainRequestHandler(unittest.TestCase):
     self.assertEqual(
         card["url"], "https://daily-news-agent-runner-5qjit44poa-uc.a.run.app"
     )
-    self.assertEqual(card["defaultInputModes"], ["text"])
-    self.assertEqual(card["defaultOutputModes"], ["text"])
+    self.assertIn("text/plain", card["defaultInputModes"])
+    self.assertIn("application/json", card["defaultOutputModes"])
     self.assertEqual(card["capabilities"], {"streaming": False})
-    self.assertTrue(len(card["skills"]) > 0)
-    self.assertTrue(len(card["tools"]) > 0)
+    self.assertGreater(len(card["skills"]), 0)
+    self.assertEqual(card["skills"][0]["id"], "run_daily_pipeline")
 
   def test_not_found_endpoint(self):
     """Tests that unrecognized routes return HTTP 404."""

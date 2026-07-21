@@ -35,24 +35,20 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
       )
       card_payload = {
           "protocolVersion": "1.0",
+          "protocol_version": "1.0",
           "name": "Daily Top News Summary AI Agent",
           "description": (
               "Personalized daily news digest agent delivering 8:00 AM summaries."
           ),
           "version": "1.0.0",
           "url": base_url,
-          "defaultInputModes": ["text"],
-          "defaultOutputModes": ["text"],
+          "preferredTransport": "JSONRPC",
+          "defaultInputModes": ["text/plain", "application/json"],
+          "defaultOutputModes": ["application/json", "text/plain"],
           "capabilities": {"streaming": False},
           "skills": [{
-              "name": "run_daily_pipeline",
-              "description": (
-                  "Triggers news collection, takeaway synthesis, and email"
-                  " dispatch."
-              ),
-          }],
-          "tools": [{
-              "name": "run_daily_pipeline",
+              "id": "run_daily_pipeline",
+              "name": "Run Daily Pipeline",
               "description": (
                   "Triggers news collection, takeaway synthesis, and email"
                   " dispatch."

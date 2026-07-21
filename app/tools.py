@@ -47,9 +47,19 @@ async def _send_grid_request(
 ) -> Dict[str, Any]:
   """Internal HTTP request execution for SendGrid mail send."""
   api_key = os.environ.get("SENDGRID_API_KEY", SENDGRID_API_KEY)
+  if api_key and api_key.startswith("${"):
+    api_key = ""
+
   sender_email = os.environ.get("SENDGRID_SENDER_EMAIL", SENDGRID_SENDER_EMAIL)
+  if sender_email and sender_email.startswith("${"):
+    sender_email = ""
+
+  dry_run_env = os.environ.get("DRY_RUN_MODE")
+  if dry_run_env and dry_run_env.startswith("${"):
+    dry_run_env = None
+
   is_dry_run = (
-      os.environ.get("DRY_RUN_MODE", str(DRY_RUN_MODE)).lower() == "true"
+      (dry_run_env or str(DRY_RUN_MODE)).lower() == "true"
   )
 
   # Check for API key configuration in production mode

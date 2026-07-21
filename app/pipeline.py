@@ -6,6 +6,12 @@ import re
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
+try:
+  from google.cloud import firestore
+except ImportError:
+  firestore = None
+
+
 import markdown
 import nh3
 
@@ -49,7 +55,7 @@ def cleanup_stale_locks(
   return cleaned_user_ids
 
 
-def claim_user_transaction(
+def _claim_user_transaction_impl(
     transaction: Any, doc_ref: Any, now_dt: datetime
 ) -> bool:
   """Atomic Firestore transaction to claim an idle user for processing."""
@@ -61,6 +67,14 @@ def claim_user_transaction(
   # Update status to 'processing' to claim exclusive lock
   transaction.update(doc_ref, {"status": "processing", "updated_at": now_dt})
   return True
+
+
+# Dynamically apply firestore.transactional decorator if firestore is available
+if firestore is not None:
+  claim_user_transaction = firestore.transactional(_claim_user_transaction_impl)
+else:
+  claim_user_transaction = _claim_user_transaction_impl
+
 
 
 def render_markdown_to_html(raw_markdown: str) -> str:
@@ -152,9 +166,8 @@ async def _process_single_user(
   current_trigger = user_data.get("next_trigger_utc")
 
   # Atomic claim transaction lock
-  claimed = db.run_transaction(
-      lambda tx: claim_user_transaction(tx, doc_ref, now_utc)
-  )
+  transaction = db.transaction()
+  claimed = claim_user_transaction(transaction, doc_ref, now_utc)
   if not claimed:
     return None
 

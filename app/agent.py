@@ -212,9 +212,8 @@ async def trigger_digest_now(email: str) -> dict:
     
     now_utc = datetime.now(timezone.utc)
     
-    claimed = db.run_transaction(
-        lambda tx: pipeline.claim_user_transaction(tx, doc_ref, now_utc)
-    )
+    transaction = db.transaction()
+    claimed = pipeline.claim_user_transaction(transaction, doc_ref, now_utc)
     if not claimed:
       return {"status": "error", "message": "User is currently being processed. Lock acquired by another task."}
 

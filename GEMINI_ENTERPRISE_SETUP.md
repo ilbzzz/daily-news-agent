@@ -216,6 +216,7 @@ Publish the agent to your Gemini Enterprise App:
 
 ```bash
 agents-cli publish gemini-enterprise \
+  --registration-type adk \
   --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app \
   --display-name "Daily Top News Summary AI Agent" \
   --description "Personalized daily news digest agent delivering 8:00 AM summaries." \

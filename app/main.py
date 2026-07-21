@@ -88,42 +88,33 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
 
   def do_POST(self):
     """Cloud Scheduler and Agent Runtime query endpoint."""
-    # Handle POST requests from Cloud Scheduler or Vertex AI Reasoning Engine
-    if self.path in (
-        "/run-pipeline",
-        "/",
-        "/api/stream_reasoning_engine",
-        "/api/query",
-        "/query",
-    ):
-      try:
-        # Determine GCP Project ID with fallbacks
-        project_id = (
-            os.environ.get("GCP_PROJECT")
-            or os.environ.get("GOOGLE_CLOUD_PROJECT")
-            or "xz-ai-agents"
-        )
-        # Initialize Firestore client if library is present
-        db = firestore.Client(project=project_id) if firestore is not None else None
+    try:
+      # Log incoming request path for debugging
+      print(f"[HTTP_POST] Handling incoming POST request on path: {self.path}")
 
-        # Execute daily pipeline run
-        results = run_daily_pipeline(db=db)
+      # Determine GCP Project ID with fallbacks
+      project_id = (
+          os.environ.get("GCP_PROJECT")
+          or os.environ.get("GOOGLE_CLOUD_PROJECT")
+          or "xz-ai-agents"
+      )
+      # Initialize Firestore client if library is present
+      db = firestore.Client(project=project_id) if firestore is not None else None
 
-        # Write HTTP 200 OK JSON response
-        self._set_headers(200)
-        self.wfile.write(json.dumps(results).encode("utf-8"))
-      except Exception as e:
-        # Log full exception traceback to stderr for Cloud Logging
-        traceback.print_exc()
-        # Return HTTP 500 Internal Server Error if pipeline encounters an unhandled exception
-        self._set_headers(500)
-        self.wfile.write(
-            json.dumps({"status": "error", "message": str(e)}).encode("utf-8")
-        )
-    else:
-      # Return 404 for unrecognized POST paths
-      self._set_headers(404)
-      self.wfile.write(json.dumps({"error": "Not found"}).encode("utf-8"))
+      # Execute daily pipeline run
+      results = run_daily_pipeline(db=db)
+
+      # Write HTTP 200 OK JSON response
+      self._set_headers(200)
+      self.wfile.write(json.dumps(results).encode("utf-8"))
+    except Exception as e:
+      # Log full exception traceback to stderr for Cloud Logging
+      traceback.print_exc()
+      # Return HTTP 500 Internal Server Error if pipeline encounters an unhandled exception
+      self._set_headers(500)
+      self.wfile.write(
+          json.dumps({"status": "error", "message": str(e)}).encode("utf-8")
+      )
 
 
 def run_server(port: int = 8080):

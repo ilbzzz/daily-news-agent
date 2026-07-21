@@ -1,0 +1,186 @@
+# Gemini Enterprise Setup & Deployment Guide: Daily Top News Summary AI Agent
+
+This step-by-step guide details how to build, test, deploy, and register the **Daily Top News Summary AI Agent** on Google Cloud Platform (GCP) and **Gemini Enterprise Agent Platform**.
+
+---
+
+## 1. Prerequisites & Environment Setup
+
+### Required Tools
+Ensure you have the following installed on your machine:
+- **Python 3.9+**
+- **Google Cloud SDK (`gcloud`)**
+- **Terraform (>= 1.0.0)**
+- **`agents-cli`** (`uv tool install google-agents-cli` or `pip install google-agents-cli`)
+
+### Required GCP IAM Permissions
+- `roles/run.admin` (Cloud Run Service Administration)
+- `roles/datastore.owner` (Firestore Database Administration)
+- `roles/secretmanager.admin` (Secret Manager Administration)
+- `roles/cloudscheduler.admin` (Cloud Scheduler Job Creation)
+- `roles/discoveryengine.admin` or `roles/discoveryengine.editor` (Gemini Enterprise Registration)
+
+### Enable GCP APIs
+Execute the following `gcloud` command to enable required services:
+```bash
+gcloud services enable \
+  run.googleapis.com \
+  firestore.googleapis.com \
+  secretmanager.googleapis.com \
+  cloudscheduler.googleapis.com \
+  discoveryengine.googleapis.com \
+  aiplatform.googleapis.com
+```
+
+---
+
+## 2. Local Setup & Building
+
+### Step 2.1: Clone and Environment Setup
+```bash
+cd google3/experimental/users/xinweizhang/git/daily-news-agent
+
+# Create Python Virtual Environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install Project Dependencies
+pip install -e .[dev]
+```
+
+### Step 2.2: Local Configuration & Unit Testing
+Set local dry-run environment variables to run tests without triggering actual SendGrid emails:
+```bash
+export DRY_RUN_MODE=true
+export GCP_PROJECT="your-gcp-project-id"
+
+# Run Unit Test Suite
+python3 -m unittest discover -s tests/unit -p "test_*.py"
+```
+
+---
+
+## 3. Infrastructure Provisioning via Terraform
+
+Provision the Secret Manager key, Firestore composite indexes (`user_due_index`, `stale_lock_index`), and Cloud Scheduler trigger using Terraform.
+
+### Step 3.1: Configure Variables
+Navigate to the `terraform/` directory and configure `terraform.tfvars`:
+```hcl
+gcp_project                       = "your-gcp-project-id"
+gcp_region                        = "us-central1"
+cloud_run_endpoint                = "https://daily-news-agent-runner-xyz.a.run.app/run-pipeline"
+scheduler_service_account_email   = "daily-news-scheduler@your-gcp-project-id.iam.gserviceaccount.com"
+```
+
+### Step 3.2: Initialize and Apply Infrastructure
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply -auto-approve
+cd ..
+```
+
+---
+
+## 4. Deploying the Service to Cloud Run
+
+### Step 4.1: Store SendGrid API Key in Secret Manager
+```bash
+echo -n "SG.your_actual_sendgrid_api_key" | gcloud secrets versions add sendgrid-api-key --data-file=-
+```
+
+### Step 4.2: Build and Deploy to Cloud Run
+Deploy the application web service to Cloud Run exposing the HTTP server on port 8080:
+```bash
+gcloud run deploy daily-news-agent-runner \
+  --source . \
+  --region us-central1 \
+  --platform managed \
+  --allow-unauthenticated \
+  --set-env-vars DRY_RUN_MODE=false,FIRESTORE_COLLECTION=users,GCP_PROJECT=your-gcp-project-id,SENDGRID_SENDER_EMAIL=digest@newsagent.ai \
+  --set-secrets SENDGRID_API_KEY=sendgrid-api-key:latest
+```
+
+### Step 4.3: Verify Deployment Endpoints
+Test the Cloud Run health check and trigger endpoints:
+```bash
+# Health Check Endpoint
+curl -X GET https://daily-news-agent-runner-xyz.a.run.app/healthz
+
+# Response:
+# {"status": "healthy", "service": "daily_news_agent"}
+```
+
+---
+
+## 5. Registering with Gemini Enterprise Agent Platform
+
+### Step 5.1: Grant Discovery Engine Invoker IAM Permissions
+Grant the Gemini Enterprise Discovery Engine service account permission to invoke the Cloud Run service:
+```bash
+export PROJECT_NUMBER=$(gcloud projects describe your-gcp-project-id --format="value(projectNumber)")
+
+gcloud run services add-iam-policy-binding daily-news-agent-runner \
+  --region us-central1 \
+  --member "serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com" \
+  --role "roles/run.servicesInvoker"
+```
+
+### Step 5.2: Publish to Gemini Enterprise via `agents-cli`
+Publish the agent to your Gemini Enterprise App:
+
+#### Option A: ADK Reasoning Engine Mode (Default)
+```bash
+agents-cli publish gemini-enterprise \
+  --gemini-enterprise-app-id projects/your-gcp-project-id/locations/global/collections/default_collection/engines/daily-news-app \
+  --display-name "Daily Top News Summary AI Agent" \
+  --description "Personalized daily news digest agent delivering 8:00 AM summaries." \
+  --tool-description "Searches verified news, synthesizes takeaways, and dispatches HTML email digests."
+```
+
+#### Option B: A2A (Agent-to-Agent) Mode on Cloud Run
+```bash
+agents-cli publish gemini-enterprise \
+  --registration-type a2a \
+  --agent-card-url https://daily-news-agent-runner-xyz.a.run.app/.well-known/agent-card.json \
+  --gemini-enterprise-app-id projects/your-gcp-project-id/locations/global/collections/default_collection/engines/daily-news-app \
+  --display-name "Daily Top News Summary AI Agent (A2A)"
+```
+
+---
+
+## 6. End-to-End Verification & Operation
+
+### Step 6.1: Register a Test User
+Register a test profile in Firestore:
+```python
+from app.agent import UserOnboardingAgent
+from google.cloud import firestore
+
+db = firestore.Client()
+agent = UserOnboardingAgent(db_client=db)
+agent.register_user(
+    email="testuser@example.com",
+    topic="Artificial Intelligence",
+    timezone_raw="America/New_York"
+)
+```
+
+### Step 6.2: Trigger Manual Pipeline Run
+Trigger the pipeline POST endpoint to verify search, HTML rendering, and email dispatch:
+```bash
+curl -X POST https://daily-news-agent-runner-xyz.a.run.app/run-pipeline
+```
+
+---
+
+## 7. Troubleshooting
+
+| Issue | Cause | Solution |
+| :--- | :--- | :--- |
+| **HTTP 403 on Cloud Scheduler Trigger** | Missing IAM OIDC permissions | Ensure `roles/run.invoker` is granted to `scheduler_service_account_email`. |
+| **SendGrid 401 Unauthorized** | Invalid API Key | Verify key in Secret Manager: `gcloud secrets versions access latest --secret=sendgrid-api-key`. |
+| **Stale Lock Stuck Records** | Cloud Run crash/timeout | Pipelines automatically clean up records stuck > 30 mins via `cleanup_stale_locks()`. |
+| **Gemini Enterprise Registration Error** | Missing Discovery Engine Editor | Verify user has `roles/discoveryengine.editor` permissions in GCP Console. |

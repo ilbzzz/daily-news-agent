@@ -44,10 +44,23 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
           "version": "1.0.0",
           "url": base_url,
           "preferredTransport": "JSONRPC",
+          "provider": {"name": "Daily News Agent", "url": base_url},
           "defaultInputModes": ["text/plain", "application/json"],
           "defaultOutputModes": ["application/json", "text/plain"],
           "capabilities": {"streaming": False},
           "skills": [{
+              "id": "run_daily_pipeline",
+              "name": "Run Daily Pipeline",
+              "description": (
+                  "Triggers news collection, takeaway synthesis, and email"
+                  " dispatch."
+              ),
+              "tags": ["news", "digest", "email"],
+              "examples": ["Send me today's AI news digest"],
+              "inputModes": ["text/plain", "application/json"],
+              "outputModes": ["application/json", "text/plain"],
+          }],
+          "tools": [{
               "id": "run_daily_pipeline",
               "name": "Run Daily Pipeline",
               "description": (

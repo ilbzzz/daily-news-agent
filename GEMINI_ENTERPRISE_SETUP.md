@@ -27,9 +27,12 @@ Ensure you have the following installed on your machine:
 
 ### Enable GCP APIs & Initialize Database
 
-Execute the following `gcloud` commands to enable required services, initialize database locations, and grant Cloud Build permissions:
+Set your GCP Project ID environment variable and execute the setup commands:
 
 ```bash
+# Set your GCP Project ID environment variable
+export PROJECT_ID="your-gcp-project-id"
+
 # Enable required GCP APIs
 gcloud services enable \
   run.googleapis.com \
@@ -48,25 +51,25 @@ gcloud firestore databases create --location=us-central1 --type=firestore-native
 gcloud app create --region=us-central1 || true
 
 # Grant required Cloud Build permissions to default compute service account
-export PROJECT_NUMBER=$(gcloud projects describe your-gcp-project-id --format="value(projectNumber)")
+export PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
 
-gcloud projects add-iam-policy-binding your-gcp-project-id \
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
   --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --role="roles/storage.admin"
 
-gcloud projects add-iam-policy-binding your-gcp-project-id \
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
   --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --role="roles/cloudbuild.builds.builder"
 
-gcloud projects add-iam-policy-binding your-gcp-project-id \
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
   --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --role="roles/artifactregistry.writer"
 
-gcloud projects add-iam-policy-binding your-gcp-project-id \
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
   --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --role="roles/logging.logWriter"
 
-gcloud projects add-iam-policy-binding your-gcp-project-id \
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
   --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --role="roles/secretmanager.secretAccessor"
 ```
@@ -96,7 +99,7 @@ Set local dry-run environment variables to run tests without triggering actual S
 
 ```bash
 export DRY_RUN_MODE=true
-export GCP_PROJECT="your-gcp-project-id"
+export GCP_PROJECT="${PROJECT_ID}"
 
 # Run Unit Test Suite
 python3 -m unittest discover -s tests/unit -p "test_*.py"
@@ -119,7 +122,7 @@ cp terraform/terraform.tfvars.example terraform/terraform.tfvars
 Configure your project-specific values in `terraform/terraform.tfvars`:
 
 ```hcl
-gcp_project                       = "your-gcp-project-id"
+gcp_project                       = "your-gcp-project-id" # Set your actual GCP Project ID
 gcp_region                        = "us-central1"
 cloud_run_endpoint                = "https://daily-news-agent-runner-xyz.a.run.app/run-pipeline"
 ```
@@ -159,7 +162,7 @@ gcloud run deploy daily-news-agent-runner \
   --region us-central1 \
   --platform managed \
   --allow-unauthenticated \
-  --set-env-vars DRY_RUN_MODE=false,FIRESTORE_COLLECTION=users,GCP_PROJECT=your-gcp-project-id,SENDGRID_SENDER_EMAIL=digest@newsagent.ai \
+  --set-env-vars DRY_RUN_MODE=false,FIRESTORE_COLLECTION=users,GCP_PROJECT=${PROJECT_ID},SENDGRID_SENDER_EMAIL=digest@newsagent.ai \
   --set-secrets SENDGRID_API_KEY=sendgrid-api-key:latest
 ```
 
@@ -193,7 +196,7 @@ curl -X GET -H "Authorization: Bearer $(gcloud auth print-identity-token)" ${SER
 Grant the Gemini Enterprise Discovery Engine service account permission to invoke the Cloud Run service:
 
 ```bash
-export PROJECT_NUMBER=$(gcloud projects describe your-gcp-project-id --format="value(projectNumber)")
+export PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
 
 gcloud run services add-iam-policy-binding daily-news-agent-runner \
   --region us-central1 \
@@ -209,7 +212,7 @@ Publish the agent to your Gemini Enterprise App:
 
 ```bash
 agents-cli publish gemini-enterprise \
-  --gemini-enterprise-app-id projects/your-gcp-project-id/locations/global/collections/default_collection/engines/daily-news-app \
+  --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app \
   --display-name "Daily Top News Summary AI Agent" \
   --description "Personalized daily news digest agent delivering 8:00 AM summaries." \
   --tool-description "Searches verified news, synthesizes takeaways, and dispatches HTML email digests."
@@ -223,7 +226,7 @@ export SERVICE_URL=$(gcloud run services describe daily-news-agent-runner --regi
 agents-cli publish gemini-enterprise \
   --registration-type a2a \
   --agent-card-url ${SERVICE_URL}/.well-known/agent-card.json \
-  --gemini-enterprise-app-id projects/your-gcp-project-id/locations/global/collections/default_collection/engines/daily-news-app \
+  --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app \
   --display-name "Daily Top News Summary AI Agent (A2A)"
 ```
 
@@ -265,7 +268,7 @@ curl -X POST ${SERVICE_URL}/run-pipeline
 | Issue | Cause | Solution |
 | :--- | :--- | :--- |
 | **`invalid token JSON from metadata: EOF`** | Cloud Shell metadata server token cache expired | Run `export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)` in Cloud Shell. |
-| **Cloud Build Permission Denied** | Compute SA missing IAM builder roles | Grant `storage.admin`, `cloudbuild.builds.builder`, `artifactregistry.writer`, and `logging.logWriter` to `${PROJECT_NUMBER}-compute@developer.gserviceaccount.com`. |
+| **Cloud Build Permission Denied** | Compute SA missing IAM builder roles | Grant `storage.admin`, `cloudbuild.builds.builder`, `artifactregistry.writer`, `logging.logWriter`, and `secretmanager.secretAccessor` to `${PROJECT_NUMBER}-compute@developer.gserviceaccount.com`. |
 | **HTTP 403 on Cloud Scheduler Trigger** | Missing IAM OIDC permissions | Ensure `roles/run.invoker` is granted to `daily-news-scheduler@<project-id>.iam.gserviceaccount.com`. |
 | **SendGrid 401 Unauthorized** | Invalid API Key | Verify key in Secret Manager or set `DRY_RUN_MODE=true` in Cloud Run env vars. |
 | **Stale Lock Stuck Records** | Cloud Run crash/timeout | Pipelines automatically clean up records stuck > 30 mins via `cleanup_stale_locks()`. |

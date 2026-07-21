@@ -233,7 +233,7 @@ If deployed via Vertex AI Reasoning Engine / Agent Runtime:
 ```bash
 agents-cli publish gemini-enterprise \
   --registration-type adk \
-  --agent-engine-id projects/${PROJECT_ID}/locations/us-central1/reasoningEngines/your-reasoning-engine-id \
+  --agent-runtime-id projects/${PROJECT_ID}/locations/us-central1/reasoningEngines/your-reasoning-engine-id \
   --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app \
   --display-name "Daily Top News Summary AI Agent" \
   --description "Personalized daily news digest agent delivering 8:00 AM summaries." \

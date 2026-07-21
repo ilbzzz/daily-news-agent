@@ -54,6 +54,7 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
                   "Triggers news collection, takeaway synthesis, and email"
                   " dispatch."
               ),
+              "tags": ["news", "digest", "email"],
           }],
       }
       self.wfile.write(json.dumps(card_payload).encode("utf-8"))

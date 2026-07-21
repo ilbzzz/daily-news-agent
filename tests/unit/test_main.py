@@ -64,6 +64,7 @@ class TestMainRequestHandler(unittest.TestCase):
     self.assertEqual(card["capabilities"], {"streaming": False})
     self.assertGreater(len(card["skills"]), 0)
     self.assertEqual(card["skills"][0]["id"], "run_daily_pipeline")
+    self.assertIn("news", card["skills"][0]["tags"])
 
   def test_not_found_endpoint(self):
     """Tests that unrecognized routes return HTTP 404."""

@@ -29,6 +29,13 @@ resource "google_firestore_database" "database" {
   type        = "FIRESTORE_NATIVE"
 }
 
+# Service Account for Cloud Scheduler OIDC Authentication
+resource "google_service_account" "scheduler_sa" {
+  account_id   = "daily-news-scheduler"
+  display_name = "Daily News Agent Scheduler Service Account"
+  project      = var.gcp_project
+}
+
 # Firestore Composite Indexes
 resource "google_firestore_index" "user_due_index" {
   project    = var.gcp_project
@@ -81,7 +88,9 @@ resource "google_cloud_scheduler_job" "pipeline_cron" {
     http_method = "POST"
     uri         = var.cloud_run_endpoint
     oidc_token {
-      service_account_email = var.scheduler_service_account_email
+      service_account_email = google_service_account.scheduler_sa.email
     }
   }
+
+  depends_on = [google_service_account.scheduler_sa]
 }

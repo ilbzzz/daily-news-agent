@@ -38,7 +38,8 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
           "protocol_version": "1.0",
           "name": "Daily Top News Summary AI Agent",
           "description": (
-              "Personalized daily news digest agent delivering 8:00 AM summaries."
+              "Personalized daily news digest agent delivering 8:00 AM"
+              " summaries."
           ),
           "version": "1.0.0",
           "url": base_url,
@@ -77,10 +78,10 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
       try:
         # Initialize Firestore client if library is present
         db = firestore.Client() if firestore is not None else None
-        
+
         # Execute daily pipeline run
         results = run_daily_pipeline(db=db)
-        
+
         # Write HTTP 200 OK JSON response
         self._set_headers(200)
         self.wfile.write(json.dumps(results).encode("utf-8"))

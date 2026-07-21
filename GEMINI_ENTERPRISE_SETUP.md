@@ -29,8 +29,7 @@ Ensure you have the following installed on your machine:
 
 ### Enable GCP APIs & Initialize Database
 
-Execute the following `gcloud` commands to enable required services and
-initialize the default Firestore database:
+Execute the following `gcloud` commands to enable required services and initialize Cloud Scheduler & Firestore database locations:
 
 ```bash
 # Enable required GCP APIs
@@ -44,6 +43,9 @@ gcloud services enable \
 
 # Create Default Firestore Database (if not already initialized in project)
 gcloud firestore databases create --location=us-central1 --type=firestore-native
+
+# Initialize App Engine / Cloud Scheduler project location (required once per GCP project)
+gcloud app create --region=us-central1
 ```
 
 --------------------------------------------------------------------------------

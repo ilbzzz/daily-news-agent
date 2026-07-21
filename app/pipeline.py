@@ -222,30 +222,42 @@ def run_daily_pipeline(
   elif now_utc.tzinfo is None:
     now_utc = now_utc.replace(tzinfo=timezone.utc)
 
-  # Step 1: Bounded stale lock cleanup (.limit(50))
-  stale_cleaned = cleanup_stale_locks(db, now_utc)
+  stale_cleaned = []
+  if db is not None:
+    try:
+      # Step 1: Bounded stale lock cleanup (.limit(50))
+      stale_cleaned = cleanup_stale_locks(db, now_utc)
+    except Exception as e:
+      print(f"[FIRESTORE_WARNING] Stale lock cleanup skipped: {e}")
+      db = None
 
   processed_users = []
   failed_users = []
 
-  # Return summary early if DB client is unattached (mock/dry-run mode)
+  # Return summary early if DB client is unattached or database is uninitialized
   if db is None:
     return {
         "status": "completed",
         "stale_cleaned_count": len(stale_cleaned),
         "processed_count": 0,
         "failed_count": 0,
+        "note": "Firestore database unavailable or uninitialized.",
     }
 
-  # Step 2: Query due idle users (active == True AND status == "idle" AND next_trigger_utc <= now_utc) capped with .limit(50)
-  due_query = (
-      db.collection("users")
-      .where("active", "==", True)
-      .where("status", "==", "idle")
-      .where("next_trigger_utc", "<=", now_utc)
-      .limit(50)
-  )
-  due_docs = due_query.get()
+  due_docs = []
+  try:
+    # Step 2: Query due idle users (active == True AND status == "idle" AND next_trigger_utc <= now_utc) capped with .limit(50)
+    due_query = (
+        db.collection("users")
+        .where("active", "==", True)
+        .where("status", "==", "idle")
+        .where("next_trigger_utc", "<=", now_utc)
+        .limit(50)
+    )
+    due_docs = due_query.get()
+  except Exception as e:
+    print(f"[FIRESTORE_WARNING] Due user query skipped: {e}")
+    due_docs = []
 
   # Instantiate NewsResearcherAgent instance
   researcher = NewsResearcherAgent()

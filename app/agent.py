@@ -235,3 +235,46 @@ class NewsResearcherAgent:
         "  - Source: [Verified"
         f" Source](https://news.google.com/search?q={topic.replace(' ', '+')})\n"
     )
+
+
+class DailyNewsAgent:
+  """Root ADK Conversational Agent exposing query() for Gemini Enterprise chat interface."""
+
+  def __init__(self, db_client: Any = None):
+    self.db = db_client
+    self.onboarding = UserOnboardingAgent(db_client=db_client)
+    self.researcher = NewsResearcherAgent()
+
+  def query(self, prompt: str) -> str:
+    """Main entrypoint for processing conversational user queries."""
+    if not prompt or not isinstance(prompt, str):
+      return "Please provide a valid question or command."
+
+    prompt_lower = prompt.lower()
+
+    # Handle subscription / onboarding intents
+    if "subscribe" in prompt_lower or "register" in prompt_lower:
+      return (
+          "To register for daily news digests, please specify your email,"
+          " topic, and timezone (e.g., 'Register user@example.com for AI in"
+          " America/New_York')."
+      )
+
+    # Handle pipeline execution / news digest generation intents
+    if any(k in prompt_lower for k in ("news", "digest", "run", "pipeline", "today")):
+      from app.pipeline import run_daily_pipeline
+
+      try:
+        results = run_daily_pipeline(db=self.db)
+        return (
+            "Daily news digest pipeline triggered successfully!\n"
+            f"Results: {results}"
+        )
+      except Exception as e:
+        return f"Daily news pipeline encountered an issue: {e}"
+
+    # Default conversational fallback response
+    return (
+        f"Daily News AI Agent received your request: '{prompt}'.\n"
+        "I deliver daily 8:00 AM news digests tailored to your topic and timezone!"
+    )

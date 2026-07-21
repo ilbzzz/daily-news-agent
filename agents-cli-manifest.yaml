@@ -2,9 +2,12 @@ version: "1.0"
 name: daily_news_agent
 description: "Daily Top News Summary AI Agent"
 
-entrypoint: "app.main:run_server"
+entrypoint: "app.agent:DailyNewsAgent"
 
 agents:
+  root_agent:
+    entry: app.agent:DailyNewsAgent
+    description: "Root conversational agent exposing query() interface for Gemini Enterprise."
   onboarding_agent:
     entry: app.agent:UserOnboardingAgent
     description: "Handles user topic onboarding, timezone normalization, and HITL verification."
@@ -28,5 +31,5 @@ environment:
   GCP_PROJECT: "${GCP_PROJECT}"
 
 runtime:
-  target: cloud_run
+  target: agent_runtime
   scheduler_cron: "*/30 * * * *"

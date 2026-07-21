@@ -1,17 +1,17 @@
 """Unit tests for validation, timezone normalization, and SendGrid email tools."""
 
-import io
+import asyncio
 import json
 import os
 import unittest
-from unittest.mock import MagicMock, patch
-import urllib.error
+from unittest.mock import AsyncMock, MagicMock, patch
+import aiohttp
 
-from app.agent import normalize_timezone
+from app.timezone_utils import normalize_timezone
 from app.tools import send_news_email, validate_and_sanitize_email
 
 
-class TestTools(unittest.TestCase):
+class TestTools(unittest.IsolatedAsyncioTestCase):
   """Test suite for tools and validation helpers."""
 
   def test_validate_and_sanitize_email_valid(self):
@@ -54,55 +54,57 @@ class TestTools(unittest.TestCase):
     with self.assertRaises(ValueError):
       normalize_timezone("Invalid/Timezone_Name")
 
-  def test_send_news_email_dry_run(self):
+  async def test_send_news_email_dry_run(self):
     """Tests send_news_email behavior in DRY_RUN_MODE."""
     with patch.dict(
         os.environ, {"DRY_RUN_MODE": "true", "SENDGRID_API_KEY": ""}
     ):
-      result = send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
+      result = await send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
       self.assertEqual(result["status"], "dry_run_success")
 
-  def test_send_news_email_missing_api_key_prod(self):
+  async def test_send_news_email_missing_api_key_prod(self):
     """Tests that missing API key in production mode raises RuntimeError."""
     with patch.dict(
         os.environ, {"DRY_RUN_MODE": "false", "SENDGRID_API_KEY": ""}
     ):
       with self.assertRaises(RuntimeError):
-        send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
+        await send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
 
-  def test_send_news_email_auth_error_401(self):
-    """Tests that SendGrid 401 Unauthorized raises RuntimeError with decoded body."""
-    error_body = json.dumps(
-        {"errors": [{"message": "Invalid API key"}]}
-    ).encode("utf-8")
-    mock_error = urllib.error.HTTPError(
-        url="https://api.sendgrid.com/v3/mail/send",
-        code=401,
-        msg="Unauthorized",
-        hdrs={},
-        fp=io.BytesIO(error_body),
-    )
+  async def test_send_news_email_auth_error_401(self):
+    """Tests that SendGrid 401 Unauthorized raises RuntimeError."""
+    mock_response = MagicMock()
+    mock_response.status = 401
+    mock_response.text = AsyncMock(return_value="Invalid API key")
+
+    mock_post = MagicMock()
+    mock_post.__aenter__.return_value = mock_response
 
     with (
         patch.dict(
             os.environ,
             {"DRY_RUN_MODE": "false", "SENDGRID_API_KEY": "SG.invalid_key"},
         ),
-        patch("urllib.request.urlopen", side_effect=mock_error),
+        patch("aiohttp.ClientSession.post", return_value=mock_post),
     ):
       with self.assertRaises(RuntimeError):
-        send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
+        await send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
 
-  def test_send_news_email_retry_on_429(self):
+  async def test_send_news_email_retry_on_429(self):
     """Tests that send_news_email retries on HTTP 429 rate limits."""
-    error_body = b"Rate limit exceeded"
-    mock_error = urllib.error.HTTPError(
-        url="https://api.sendgrid.com/v3/mail/send",
-        code=429,
-        msg="Too Many Requests",
-        hdrs={"Retry-After": "1"},
-        fp=io.BytesIO(error_body),
-    )
+    mock_response_429 = MagicMock()
+    mock_response_429.status = 429
+    mock_response_429.headers = {"Retry-After": "1"}
+    mock_response_429.text = AsyncMock(return_value="Rate limit exceeded")
+
+    mock_post_429 = MagicMock()
+    mock_post_429.__aenter__.return_value = mock_response_429
+
+    mock_response_202 = MagicMock()
+    mock_response_202.status = 202
+    mock_response_202.text = AsyncMock(return_value="{}")
+
+    mock_post_202 = MagicMock()
+    mock_post_202.__aenter__.return_value = mock_response_202
 
     with (
         patch.dict(
@@ -110,13 +112,15 @@ class TestTools(unittest.TestCase):
             {"DRY_RUN_MODE": "false", "SENDGRID_API_KEY": "SG.valid_key"},
         ),
         patch(
-            "urllib.request.urlopen", side_effect=[mock_error, MagicMock()]
-        ) as mock_urlopen,
-        patch("time.sleep"),
+            "aiohttp.ClientSession.post",
+            side_effect=[mock_post_429, mock_post_202],
+        ) as mock_post_call,
+        patch("asyncio.sleep") as mock_sleep,
     ):
-      result = send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
+      result = await send_news_email("user@example.com", "AI", "<h1>Digest</h1>")
       self.assertEqual(result["status"], "success")
-      self.assertEqual(mock_urlopen.call_count, 2)
+      self.assertEqual(mock_post_call.call_count, 2)
+      mock_sleep.assert_called_once_with(1)
 
 
 if __name__ == "__main__":

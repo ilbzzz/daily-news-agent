@@ -1,86 +1,17 @@
 """Daily pipeline execution logic including stale lock cleanup, atomic user claim, ADK state pre-population, HTML rendering, and email dispatch."""
 
+import asyncio
 from datetime import datetime, time, timedelta, timezone
 import re
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
-try:
-  import markdown
-except ImportError:
-  markdown = None
+import markdown
+import nh3
 
-try:
-  import nh3
-except ImportError:
-  nh3 = None
-
-from app.agent import NewsResearcherAgent, get_user_local_cutoff_date
+from app.researcher import NewsResearcherAgent
+from app.timezone_utils import get_user_local_cutoff_date
 from app.tools import send_news_email
-
-
-def _fallback_markdown_to_html(raw_markdown: str) -> str:
-  """Simple regex fallback converter from Markdown to HTML when markdown module is unavailable."""
-  lines = raw_markdown.splitlines()
-  html_lines = []
-  in_list = False
-
-  # Iterate line-by-line over raw markdown content
-  for line in lines:
-    stripped = line.strip()
-    # Handle empty lines and close list tags if active
-    if not stripped:
-      if in_list:
-        html_lines.append("</ul>")
-        in_list = False
-      continue
-
-    # Convert Markdown Headers (#, ##, ###)
-    if stripped.startswith("# "):
-      if in_list:
-        html_lines.append("</ul>")
-        in_list = False
-      html_lines.append(f"<h1>{stripped[2:].strip()}</h1>")
-    elif stripped.startswith("## "):
-      if in_list:
-        html_lines.append("</ul>")
-        in_list = False
-      html_lines.append(f"<h2>{stripped[3:].strip()}</h2>")
-    elif stripped.startswith("### "):
-      if in_list:
-        html_lines.append("</ul>")
-        in_list = False
-      html_lines.append(f"<h3>{stripped[4:].strip()}</h3>")
-    # Convert Unordered List Items (- or *)
-    elif stripped.startswith("- ") or stripped.startswith("* "):
-      if not in_list:
-        html_lines.append("<ul>")
-        in_list = True
-      item_text = stripped[2:].strip()
-      # Replace Markdown bold (**text**) with <strong> HTML tags
-      item_text = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", item_text)
-      # Replace Markdown links ([text](url)) with <a> HTML tags
-      item_text = re.sub(
-          r"\[(.*?)\]\((.*?)\)", r'<a href="\2">\1</a>', item_text
-      )
-      html_lines.append(f"<li>{item_text}</li>")
-    # Convert Standard Paragraph Lines
-    else:
-      if in_list:
-        html_lines.append("</ul>")
-        in_list = False
-      # Format bold and link patterns in paragraph text
-      line_text = re.sub(r"\*\*(.*?)\*\*", r"<strong>\1</strong>", stripped)
-      line_text = re.sub(
-          r"\[(.*?)\]\((.*?)\)", r'<a href="\2">\1</a>', line_text
-      )
-      html_lines.append(f"<p>{line_text}</p>")
-
-  # Close remaining open list tags at end of document
-  if in_list:
-    html_lines.append("</ul>")
-
-  return "\n".join(html_lines)
 
 
 def cleanup_stale_locks(
@@ -138,17 +69,11 @@ def render_markdown_to_html(raw_markdown: str) -> str:
   if not raw_markdown or not raw_markdown.strip():
     raw_markdown = "# Daily Top Digest\n\nNo Major News Today."
 
-  # Convert Markdown to HTML using markdown module if present, or regex fallback
-  if markdown is not None:
-    html_body = markdown.markdown(raw_markdown, extensions=["extra"])
-  else:
-    html_body = _fallback_markdown_to_html(raw_markdown)
+  # Convert Markdown to HTML using markdown module
+  html_body = markdown.markdown(raw_markdown, extensions=["extra"])
 
-  # Sanitize HTML using nh3 if available to strip untrusted elements
-  if nh3 is not None:
-    clean_html = nh3.clean(html_body)
-  else:
-    clean_html = html_body
+  # Sanitize HTML using nh3 to strip untrusted elements
+  clean_html = nh3.clean(html_body)
 
   # Embed sanitized HTML into a responsive table-based email template with inline CSS
   email_template = f"""<!DOCTYPE html>
@@ -212,10 +137,74 @@ def advance_user_next_trigger_local(
   return next_local_8am.astimezone(ZoneInfo("UTC"))
 
 
-def run_daily_pipeline(
+async def _process_single_user(
+    db: Any,
+    doc: Any,
+    researcher: NewsResearcherAgent,
+    now_utc: datetime,
+) -> Optional[str]:
+  """Concurrently processes news summary and email dispatch for a single user."""
+  doc_ref = doc.reference
+  user_data = doc.to_dict()
+  user_email = user_data.get("email", doc.id)
+  user_topic = user_data.get("topic", "General News")
+  user_tz = user_data.get("timezone", "UTC")
+  current_trigger = user_data.get("next_trigger_utc")
+
+  # Atomic claim transaction lock
+  transaction = db.transaction()
+  claimed = claim_user_transaction(transaction, doc_ref, now_utc)
+  if not claimed:
+    return None
+
+  success = False
+  try:
+    cutoff_date = get_user_local_cutoff_date(user_tz, now_utc)
+    raw_summary = researcher.run(
+        topic=user_topic,
+        search_date_cutoff=cutoff_date,
+    )
+    if not raw_summary or not raw_summary.strip():
+      raw_summary = f"# Daily Top Digest: {user_topic}\n\nNo Major News Today."
+
+    html_content = render_markdown_to_html(raw_summary)
+
+    # Dispatch email asynchronously
+    await send_news_email(
+        recipient_email=user_email,
+        topic=user_topic,
+        html_content=html_content,
+    )
+
+    # Advance trigger and release lock
+    next_trigger = advance_user_next_trigger_local(
+        user_tz, current_trigger, now_utc
+    )
+    doc_ref.update({
+        "status": "idle",
+        "next_trigger_utc": next_trigger,
+        "updated_at": now_utc,
+    })
+    success = True
+    return user_email
+  except Exception as e:
+    print(f"[PIPELINE_FAILURE] Error processing user {user_email}: {e}")
+    raise e
+  finally:
+    if not success:
+      try:
+        doc_ref.update({"status": "idle", "updated_at": now_utc})
+      except Exception as cleanup_err:
+        print(
+            f"[CLEANUP_ERROR] Failed to reset status for {user_email}:"
+            f" {cleanup_err}"
+        )
+
+
+async def run_daily_pipeline(
     db: Any = None, now_utc: Optional[datetime] = None
 ) -> Dict[str, Any]:
-  """Executes daily pipeline: stale lock cleanup, querying due users, running researcher, HTML rendering, dispatch, and DST schedule advancement."""
+  """Executes daily pipeline concurrently for all due users."""
   # Ensure UTC timezone awareness on timestamp
   if now_utc is None:
     now_utc = datetime.now(timezone.utc)
@@ -225,14 +214,11 @@ def run_daily_pipeline(
   stale_cleaned = []
   if db is not None:
     try:
-      # Step 1: Bounded stale lock cleanup (.limit(50))
+      # Step 1: Bounded stale lock cleanup
       stale_cleaned = cleanup_stale_locks(db, now_utc)
     except Exception as e:
       print(f"[FIRESTORE_WARNING] Stale lock cleanup skipped: {e}")
       db = None
-
-  processed_users = []
-  failed_users = []
 
   # Return summary early if DB client is unattached or database is uninitialized
   if db is None:
@@ -262,75 +248,24 @@ def run_daily_pipeline(
   # Instantiate NewsResearcherAgent instance
   researcher = NewsResearcherAgent()
 
-  # Iterate over each due user document
-  for doc in due_docs:
-    doc_ref = doc.reference
-    user_data = doc.to_dict()
-    user_email = user_data.get("email", doc.id)
-    user_topic = user_data.get("topic", "General News")
-    user_tz = user_data.get("timezone", "UTC")
-    current_trigger = user_data.get("next_trigger_utc")
+  # Create tasks for all due users to run concurrently
+  tasks = [
+      _process_single_user(db, doc, researcher, now_utc)
+      for doc in due_docs
+  ]
 
-    # Step 3: Atomic claim transaction lock
-    transaction = db.transaction()
-    claimed = claim_user_transaction(transaction, doc_ref, now_utc)
-    if not claimed:
-      continue
+  # Run all tasks concurrently
+  results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    success = False
-    try:
-      # Step 4: Compute search date cutoff relative to user local timezone
-      cutoff_date = get_user_local_cutoff_date(user_tz, now_utc)
-      session_state = {
-          "topic": user_topic,
-          "search_date_cutoff": cutoff_date,
-      }
+  processed_users = []
+  failed_users = []
 
-      # Step 5: Execute NewsResearcherAgent search
-      raw_summary = researcher.run(
-          topic=session_state["topic"],
-          search_date_cutoff=session_state["search_date_cutoff"],
-      )
-      if not raw_summary or not raw_summary.strip():
-        raw_summary = (
-            f"# Daily Top Digest: {user_topic}\n\nNo Major News Today."
-        )
-
-      # Step 6: Perform post-execution HTML conversion & sanitization
-      html_content = render_markdown_to_html(raw_summary)
-
-      # Step 7: Dispatch email via SendGrid API
-      send_news_email(
-          recipient_email=user_email,
-          topic=user_topic,
-          html_content=html_content,
-      )
-
-      # Step 8: Advance next_trigger_utc by 1 local day and reset status to 'idle'
-      next_trigger = advance_user_next_trigger_local(
-          user_tz, current_trigger, now_utc
-      )
-      doc_ref.update({
-          "status": "idle",
-          "next_trigger_utc": next_trigger,
-          "updated_at": now_utc,
-      })
-      success = True
-      processed_users.append(user_email)
-    except Exception as e:
-      # Log processing errors and record user in failure list
-      print(f"[PIPELINE_FAILURE] Error processing user {user_email}: {e}")
+  for doc, res in zip(due_docs, results):
+    user_email = doc.to_dict().get("email", doc.id)
+    if isinstance(res, Exception):
       failed_users.append(user_email)
-    finally:
-      if not success:
-        # Failure recovery status release: Ensure lock status is reset to 'idle'
-        try:
-          doc_ref.update({"status": "idle", "updated_at": now_utc})
-        except Exception as cleanup_err:
-          print(
-              f"[CLEANUP_ERROR] Failed to reset status for {user_email}:"
-              f" {cleanup_err}"
-          )
+    elif res is not None:
+      processed_users.append(res)
 
   # Return operational summary dictionary
   return {

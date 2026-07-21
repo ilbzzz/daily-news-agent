@@ -9,3 +9,6 @@ __pycache__/
 node_modules/
 .git/
 deployment_metadata.json
+.env
+terraform/terraform.tfvars
+

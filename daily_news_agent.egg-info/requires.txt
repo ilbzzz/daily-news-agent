@@ -1,0 +1,13 @@
+google-adk[gcp]<3.0.0,>=2.0.0
+google-cloud-aiplatform>=1.130.0
+google-cloud-firestore>=2.11.0
+tenacity>=8.2.0
+markdown>=3.4.0
+nh3>=0.2.14
+pydantic>=2.0.0
+tzdata>=2023.3
+a2a-sdk[http-server]~=0.3.22
+aiohttp>=3.13.4
+
+[dev]
+pytest>=7.4.0

@@ -2,10 +2,11 @@
 
 from datetime import datetime, timedelta, timezone
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from app.agent import UserOnboardingAgent, calculate_next_local_8am_utc, get_user_local_cutoff_date
+from app.agent import UserOnboardingAgent
+from app.timezone_utils import calculate_next_local_8am_utc, get_user_local_cutoff_date
 from app.pipeline import (
     advance_user_next_trigger_local,
     claim_user_transaction,
@@ -15,7 +16,7 @@ from app.pipeline import (
 )
 
 
-class TestPipeline(unittest.TestCase):
+class TestPipeline(unittest.IsolatedAsyncioTestCase):
   """Test suite for pipeline logic, scheduling math, claim transactions, and status releases."""
 
   def test_calculate_next_local_8am_utc_before_8am(self):
@@ -156,7 +157,7 @@ class TestPipeline(unittest.TestCase):
     expected_trigger = datetime(2026, 7, 21, 12, 0, 0, tzinfo=ZoneInfo("UTC"))
     self.assertEqual(updated["next_trigger_utc"], expected_trigger)
 
-  def test_run_daily_pipeline_flow(self):
+  async def test_run_daily_pipeline_flow(self):
     """Tests end-to-end pipeline execution with mocked Firestore DB and send_news_email."""
     # Initialize mock database client
     mock_db = MagicMock()
@@ -193,12 +194,13 @@ class TestPipeline(unittest.TestCase):
         patch("app.pipeline.claim_user_transaction", return_value=True),
         patch(
             "app.pipeline.send_news_email",
+            new_callable=AsyncMock,
             return_value={"status": "dry_run_success"},
         ) as mock_send,
     ):
       # Execute daily pipeline with mocked current time
       now_utc = datetime(2026, 7, 20, 12, 30, 0, tzinfo=timezone.utc)
-      results = run_daily_pipeline(mock_db, now_utc)
+      results = await run_daily_pipeline(mock_db, now_utc)
 
       # Verify execution results and function invocations
       self.assertEqual(results["status"], "completed")

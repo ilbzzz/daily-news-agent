@@ -1,17 +1,11 @@
 """Tools and helpers for email validation, sanitization, and dispatch with retry logic."""
 
+import asyncio
 import json
 import os
 import re
-import time
 from typing import Any, Dict
-import urllib.error
-import urllib.request
-
-try:
-  from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
-except ImportError:
-  retry = None
+import aiohttp
 
 from app.config import DRY_RUN_MODE, SENDGRID_API_KEY, SENDGRID_SENDER_EMAIL
 
@@ -48,19 +42,10 @@ def validate_and_sanitize_email(raw_email: str) -> str:
   return cleaned.lower()
 
 
-def _is_retriable_http_error(exception: Exception) -> bool:
-  """Returns True if the exception is an HTTP error that should be retried (429 or 5xx)."""
-  if isinstance(exception, urllib.error.HTTPError):
-    # Retry on HTTP 429 (Too Many Requests) or HTTP 5xx server errors
-    return exception.code == 429 or (500 <= exception.code < 600)
-  return False
-
-
-def _send_grid_request(
-    recipient_email: str, topic: str, html_content: str
+async def _send_grid_request(
+    session: aiohttp.ClientSession, recipient_email: str, topic: str, html_content: str
 ) -> Dict[str, Any]:
   """Internal HTTP request execution for SendGrid mail send."""
-  # Load configuration from environment variables with fallback defaults
   api_key = os.environ.get("SENDGRID_API_KEY", SENDGRID_API_KEY)
   sender_email = os.environ.get("SENDGRID_SENDER_EMAIL", SENDGRID_SENDER_EMAIL)
   is_dry_run = (
@@ -86,45 +71,46 @@ def _send_grid_request(
       "content": [{"type": "text/html", "value": html_content}],
   }
 
-  # Build HTTP POST request with Authorization headers
-  req = urllib.request.Request(
-      "https://api.sendgrid.com/v3/mail/send",
-      data=json.dumps(payload).encode("utf-8"),
-      headers={
-          "Authorization": f"Bearer {api_key}",
-          "Content-Type": "application/json",
-      },
-      method="POST",
-  )
+  headers = {
+      "Authorization": f"Bearer {api_key}",
+      "Content-Type": "application/json",
+  }
 
   try:
-    # Execute HTTP request to SendGrid API endpoint
-    with urllib.request.urlopen(req) as response:
-      return {"status": "success"}
-  except urllib.error.HTTPError as e:
-    # Decode and log detailed SendGrid JSON error response body
-    error_body = e.read().decode("utf-8", errors="ignore")
-    print(f"[SENDGRID_ERROR] HTTP {e.code}: {error_body}")
-    
-    # Handle fatal authentication errors (401/403)
-    if e.code in (401, 403):
-      raise RuntimeError(
-          f"Fatal SendGrid Auth Error (HTTP {e.code}): {error_body}"
-      )
-    # Handle rate limiting (429) with Retry-After header parsing
-    elif e.code == 429:
-      retry_header = e.headers.get("Retry-After", "2")
-      try:
-        retry_after = int(retry_header)
-      except ValueError:
-        retry_after = 2
-      print(f"[RATE_LIMIT] SendGrid rate limited. Waiting {retry_after}s...")
-      time.sleep(retry_after)
-    # Re-raise exception for upper-level retry handler
+    async with session.post(
+        "https://api.sendgrid.com/v3/mail/send",
+        json=payload,
+        headers=headers,
+    ) as response:
+      if response.status in (200, 201, 202):
+        return {"status": "success"}
+
+      # Decode and log detailed SendGrid JSON error response body
+      error_body = await response.text()
+      print(f"[SENDGRID_ERROR] HTTP {response.status}: {error_body}")
+      
+      # Handle fatal authentication errors (401/403)
+      if response.status in (401, 403):
+        raise RuntimeError(
+            f"Fatal SendGrid Auth Error (HTTP {response.status}): {error_body}"
+        )
+      # Handle rate limiting (429)
+      elif response.status == 429:
+        retry_header = response.headers.get("Retry-After", "2")
+        raise aiohttp.ClientResponseError(
+            request_info=response.request_info,
+            history=response.history,
+            status=response.status,
+            message=f"Rate limited. Retry-After: {retry_header}",
+            headers=response.headers,
+        )
+      else:
+        response.raise_for_status()
+  except aiohttp.ClientResponseError as e:
     raise e
 
 
-def send_news_email(
+async def send_news_email(
     recipient_email: str, topic: str, html_content: str, max_retries: int = 3
 ) -> Dict[str, Any]:
   """Sends news digest email via SendGrid REST API with retries for HTTP 429/5xx.
@@ -141,25 +127,48 @@ def send_news_email(
   Raises:
       RuntimeError: For authentication failures (401/403) or missing API key in
       production mode.
-      urllib.error.HTTPError: If max retries are exhausted.
+      aiohttp.ClientResponseError: If max retries are exhausted.
   """
   attempt = 0
-  # Exponential backoff retry loop for retriable HTTP errors
-  while True:
-    try:
-      # Execute HTTP request to SendGrid
-      return _send_grid_request(recipient_email, topic, html_content)
-    except urllib.error.HTTPError as e:
-      attempt += 1
-      # Check if error is retriable and under maximum attempt limit
-      if _is_retriable_http_error(e) and attempt < max_retries:
-        backoff = 2**attempt
-        print(
-            f"[RETRY] Attempt {attempt}/{max_retries} failed with HTTP"
-            f" {e.code}. Retrying in {backoff}s..."
+  async with aiohttp.ClientSession() as session:
+    while True:
+      try:
+        return await _send_grid_request(
+            session=session,
+            recipient_email=recipient_email,
+            topic=topic,
+            html_content=html_content,
         )
-        # Sleep for exponential backoff duration before next retry attempt
-        time.sleep(backoff)
-        continue
-      # Re-raise exception if non-retriable or max attempts exhausted
-      raise e
+      except Exception as e:
+        attempt += 1
+        
+        # Check if error is retriable (HTTP 429 or 5xx) and limit has not been reached
+        is_retriable = False
+        retry_delay = (2**attempt) * 2
+        
+        if isinstance(e, aiohttp.ClientResponseError):
+          if e.status == 429:
+            is_retriable = True
+            # Try to extract custom retry delay from headers
+            retry_header = e.headers.get("Retry-After") if e.headers else None
+            try:
+              if retry_header:
+                retry_delay = int(retry_header)
+            except ValueError:
+              pass
+            print(f"[RATE_LIMIT] SendGrid rate limited. Waiting {retry_delay}s...")
+          elif 500 <= e.status < 600:
+            is_retriable = True
+            
+        elif isinstance(e, aiohttp.ClientError):
+          is_retriable = True
+
+        if is_retriable and attempt <= max_retries:
+          print(
+              f"[RETRY] Attempt {attempt}/{max_retries} failed with retriable error: {e}. Retrying in {retry_delay}s..."
+          )
+          await asyncio.sleep(retry_delay)
+          continue
+        
+        # Re-raise exception if non-retriable or max attempts exhausted
+        raise e

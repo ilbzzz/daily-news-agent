@@ -7,6 +7,12 @@ import re
 from typing import Any, Dict
 import aiohttp
 
+try:
+  from google.cloud import secretmanager
+except ImportError:
+  secretmanager = None
+
+
 from app.config import DRY_RUN_MODE, SENDGRID_API_KEY, SENDGRID_SENDER_EMAIL
 
 # RFC 5322 regex pattern for email validation
@@ -42,13 +48,43 @@ def validate_and_sanitize_email(raw_email: str) -> str:
   return cleaned.lower()
 
 
+async def _get_sendgrid_api_key(api_key_env: str) -> str:
+  """Resolves the SendGrid API key, falling back to GCP Secret Manager.
+
+  If the key is not set in environment, retrieves it from GCP Secret Manager.
+  """
+  if not api_key_env or api_key_env.startswith("${"):
+    if secretmanager is None:
+      return ""
+    try:
+      client = secretmanager.SecretManagerServiceClient()
+      project_id = (
+          os.environ.get("GCP_PROJECT")
+          or os.environ.get("GOOGLE_CLOUD_PROJECT")
+          or "xz-ai-agents"
+      )
+      name = f"projects/{project_id}/secrets/sendgrid-api-key/versions/latest"
+      # Fetch secret dynamically in a separate thread to keep it async friendly
+      response = await asyncio.to_thread(
+          client.access_secret_version, request={"name": name}
+      )
+      return response.payload.data.decode("UTF-8").strip()
+    except Exception as e:
+      print(
+          f"[SECRET_MANAGER_ERROR] Failed to access secret"
+          f" 'sendgrid-api-key': {e}"
+      )
+      return ""
+  return api_key_env
+
+
 async def _send_grid_request(
     session: aiohttp.ClientSession, recipient_email: str, topic: str, html_content: str
 ) -> Dict[str, Any]:
   """Internal HTTP request execution for SendGrid mail send."""
-  api_key = os.environ.get("SENDGRID_API_KEY", SENDGRID_API_KEY)
-  if api_key and api_key.startswith("${"):
-    api_key = ""
+  api_key_env = os.environ.get("SENDGRID_API_KEY", SENDGRID_API_KEY)
+  api_key = await _get_sendgrid_api_key(api_key_env)
+
 
   sender_email = os.environ.get("SENDGRID_SENDER_EMAIL", SENDGRID_SENDER_EMAIL)
   if sender_email and sender_email.startswith("${"):

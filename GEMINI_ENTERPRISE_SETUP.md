@@ -198,6 +198,10 @@ Grant the Gemini Enterprise Discovery Engine service account permission to invok
 ```bash
 export PROJECT_NUMBER=$(gcloud projects describe ${PROJECT_ID} --format="value(projectNumber)")
 
+# Provision Discovery Engine service account if not already created
+gcloud beta services identity create --service=discoveryengine.googleapis.com --project=${PROJECT_ID} || true
+
+# Grant invoker permissions to Discovery Engine service account
 gcloud run services add-iam-policy-binding daily-news-agent-runner \
   --region us-central1 \
   --member "serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-discoveryengine.iam.gserviceaccount.com" \

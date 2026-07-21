@@ -23,9 +23,28 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
     self.end_headers()
 
   def do_GET(self):
-    """Health check endpoint."""
+    """Health check and A2A Agent Card metadata endpoint."""
+    # Handle GET /.well-known/agent-card.json requests for A2A registration
+    if self.path in ("/.well-known/agent-card.json", "/agent-card.json"):
+      self._set_headers(200)
+      card_payload = {
+          "name": "Daily Top News Summary AI Agent",
+          "description": (
+              "Personalized daily news digest agent delivering 8:00 AM summaries."
+          ),
+          "version": "1.0.0",
+          "capabilities": {"streaming": False},
+          "tools": [{
+              "name": "run_daily_pipeline",
+              "description": (
+                  "Triggers news collection, takeaway synthesis, and email"
+                  " dispatch."
+              ),
+          }],
+      }
+      self.wfile.write(json.dumps(card_payload).encode("utf-8"))
     # Handle GET /healthz and /healthcheck requests
-    if self.path in ("/", "/healthz", "/healthcheck"):
+    elif self.path in ("/", "/healthz", "/healthcheck"):
       self._set_headers(200)
       # Return JSON health status
       self.wfile.write(

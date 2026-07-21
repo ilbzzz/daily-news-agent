@@ -152,8 +152,9 @@ async def _process_single_user(
   current_trigger = user_data.get("next_trigger_utc")
 
   # Atomic claim transaction lock
-  transaction = db.transaction()
-  claimed = claim_user_transaction(transaction, doc_ref, now_utc)
+  claimed = db.run_transaction(
+      lambda tx: claim_user_transaction(tx, doc_ref, now_utc)
+  )
   if not claimed:
     return None
 

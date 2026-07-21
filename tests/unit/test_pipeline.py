@@ -188,6 +188,7 @@ class TestPipeline(unittest.IsolatedAsyncioTestCase):
     # Configure mock transaction
     mock_transaction = MagicMock()
     mock_db.transaction.return_value = mock_transaction
+    mock_db.run_transaction.side_effect = lambda cb: cb(mock_transaction)
 
     # Patch claim_user_transaction and send_news_email
     with (

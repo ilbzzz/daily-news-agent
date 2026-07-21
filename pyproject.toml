@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
     "google-adk>=0.1.0",
+    "google-cloud-aiplatform>=1.130.0",
     "google-cloud-firestore>=2.11.0",
     "tenacity>=8.2.0",
     "markdown>=3.4.0",

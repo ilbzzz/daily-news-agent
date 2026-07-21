@@ -33,3 +33,8 @@ python_files = "test_*.py"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["app*"]
+
+[[tool.uv.index]]
+url = "https://pypi.org/simple"
+default = true
+

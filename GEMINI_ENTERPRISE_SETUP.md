@@ -27,11 +27,12 @@ Ensure you have the following installed on your machine:
 -   `roles/discoveryengine.admin` or `roles/discoveryengine.editor` (Gemini
     Enterprise Registration)
 
-### Enable GCP APIs
+### Enable GCP APIs & Initialize Database
 
-Execute the following `gcloud` command to enable required services:
+Execute the following `gcloud` commands to enable required services and initialize the default Firestore database:
 
 ```bash
+# Enable required GCP APIs
 gcloud services enable \
   run.googleapis.com \
   firestore.googleapis.com \
@@ -39,6 +40,9 @@ gcloud services enable \
   cloudscheduler.googleapis.com \
   discoveryengine.googleapis.com \
   aiplatform.googleapis.com
+
+# Create Default Firestore Database (if not already initialized in project)
+gcloud firestore databases create --location=us-central1 --type=firestore-native
 ```
 
 --------------------------------------------------------------------------------

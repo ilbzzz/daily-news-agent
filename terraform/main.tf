@@ -21,10 +21,18 @@ resource "google_secret_manager_secret" "sendgrid_api_key" {
   }
 }
 
+# Firestore Database (Default)
+resource "google_firestore_database" "database" {
+  project     = var.gcp_project
+  name        = "(default)"
+  location_id = var.gcp_region
+  type        = "FIRESTORE_NATIVE"
+}
+
 # Firestore Composite Indexes
 resource "google_firestore_index" "user_due_index" {
   project    = var.gcp_project
-  database   = "(default)"
+  database   = google_firestore_database.database.name
   collection = "users"
 
   fields {
@@ -39,11 +47,13 @@ resource "google_firestore_index" "user_due_index" {
     field_path = "next_trigger_utc"
     order      = "ASCENDING"
   }
+
+  depends_on = [google_firestore_database.database]
 }
 
 resource "google_firestore_index" "stale_lock_index" {
   project    = var.gcp_project
-  database   = "(default)"
+  database   = google_firestore_database.database.name
   collection = "users"
 
   fields {
@@ -54,6 +64,8 @@ resource "google_firestore_index" "stale_lock_index" {
     field_path = "updated_at"
     order      = "ASCENDING"
   }
+
+  depends_on = [google_firestore_database.database]
 }
 
 # Cloud Scheduler 30-minute Trigger
@@ -63,6 +75,7 @@ resource "google_cloud_scheduler_job" "pipeline_cron" {
   schedule         = var.scheduler_cron
   time_zone        = "UTC"
   attempt_deadline = "320s"
+  region           = var.gcp_region
 
   http_target {
     http_method = "POST"

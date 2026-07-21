@@ -80,7 +80,13 @@ Provision the Secret Manager key, Firestore composite indexes (`user_due_index`,
 
 ### Step 3.1: Configure Variables
 
-Navigate to the `terraform/` directory and configure `terraform.tfvars`:
+Create a `terraform/terraform.tfvars` file by copying the template [terraform/terraform.tfvars.example](file:///google/src/cloud/xinweizhang/ai-agents/google3/experimental/users/xinweizhang/git/daily-news-agent/terraform/terraform.tfvars.example):
+
+```bash
+cp terraform/terraform.tfvars.example terraform/terraform.tfvars
+```
+
+Configure your project-specific values in `terraform/terraform.tfvars`:
 
 ```hcl
 gcp_project                       = "your-gcp-project-id"

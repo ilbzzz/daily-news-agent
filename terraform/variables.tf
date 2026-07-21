@@ -20,3 +20,9 @@ variable "cloud_run_endpoint" {
   default     = "https://daily-news-agent-runner.a.run.app/run-pipeline"
   description = "Target Cloud Run endpoint URL triggered by Cloud Scheduler."
 }
+
+variable "scheduler_service_account_email" {
+  type        = string
+  default     = ""
+  description = "Optional custom service account email. If blank, Terraform provisions the service account automatically."
+}

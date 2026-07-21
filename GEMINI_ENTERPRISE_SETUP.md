@@ -12,20 +12,18 @@ Enterprise Agent Platform**.
 
 Ensure you have the following installed on your machine:
 
--   **Python 3.9+**
--   **Google Cloud SDK (`gcloud`)**
--   **Terraform (>= 1.0.0)**
--   **`agents-cli`** (`uv tool install google-agents-cli` or `pip install
-    google-agents-cli`)
+- **Python 3.9+**
+- **Google Cloud SDK (`gcloud`)**
+- **Terraform (>= 1.0.0)**
+- **`agents-cli`** (`uv tool install google-agents-cli` or `pip install google-agents-cli`)
 
 ### Required GCP IAM Permissions
 
--   `roles/run.admin` (Cloud Run Service Administration)
--   `roles/datastore.owner` (Firestore Database Administration)
--   `roles/secretmanager.admin` (Secret Manager Administration)
--   `roles/cloudscheduler.admin` (Cloud Scheduler Job Creation)
--   `roles/discoveryengine.admin` or `roles/discoveryengine.editor` (Gemini
-    Enterprise Registration)
+- `roles/run.admin` (Cloud Run Service Administration)
+- `roles/datastore.owner` (Firestore Database Administration)
+- `roles/secretmanager.admin` (Secret Manager Administration)
+- `roles/cloudscheduler.admin` (Cloud Scheduler Job Creation)
+- `roles/discoveryengine.admin` or `roles/discoveryengine.editor` (Gemini Enterprise Registration)
 
 ### Enable GCP APIs & Initialize Database
 
@@ -45,6 +43,9 @@ gcloud services enable \
 
 # Create Default Firestore Database (if not already initialized in project)
 gcloud firestore databases create --location=us-central1 --type=firestore-native
+
+# Initialize App Engine / Cloud Scheduler project location (required once per GCP project)
+gcloud app create --region=us-central1 || true
 
 # Grant required Cloud Build permissions to default compute service account
 export PROJECT_NUMBER=$(gcloud projects describe your-gcp-project-id --format="value(projectNumber)")
@@ -87,8 +88,7 @@ pip install -e .[dev]
 
 ### Step 2.2: Local Configuration & Unit Testing
 
-Set local dry-run environment variables to run tests without triggering actual
-SendGrid emails:
+Set local dry-run environment variables to run tests without triggering actual SendGrid emails:
 
 ```bash
 export DRY_RUN_MODE=true
@@ -102,13 +102,11 @@ python3 -m unittest discover -s tests/unit -p "test_*.py"
 
 ## 3. Infrastructure Provisioning via Terraform
 
-Provision the Secret Manager key, Firestore composite indexes (`user_due_index`,
-`stale_lock_index`), and Cloud Scheduler trigger using Terraform.
+Provision the Secret Manager key, Firestore composite indexes (`user_due_index`, `stale_lock_index`), Cloud Scheduler service account, and Cloud Scheduler trigger using Terraform.
 
 ### Step 3.1: Configure Variables
 
-Create a `terraform/terraform.tfvars` file by copying the template
-[`terraform/terraform.tfvars.example`](terraform/terraform.tfvars.example):
+Create a `terraform/terraform.tfvars` file by copying the template [`terraform/terraform.tfvars.example`](terraform/terraform.tfvars.example):
 
 ```bash
 cp terraform/terraform.tfvars.example terraform/terraform.tfvars
@@ -120,10 +118,12 @@ Configure your project-specific values in `terraform/terraform.tfvars`:
 gcp_project                       = "your-gcp-project-id"
 gcp_region                        = "us-central1"
 cloud_run_endpoint                = "https://daily-news-agent-runner-xyz.a.run.app/run-pipeline"
-scheduler_service_account_email   = "daily-news-scheduler@your-gcp-project-id.iam.gserviceaccount.com"
 ```
 
 ### Step 3.2: Initialize and Apply Infrastructure
+
+> **Cloud Shell Note**: If running in Cloud Shell, export your OAuth2 token first to bypass Cloud Shell metadata daemon timeouts:
+> `export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)`
 
 ```bash
 cd terraform
@@ -143,10 +143,11 @@ cd ..
 echo -n "SG.your_actual_sendgrid_api_key" | gcloud secrets versions add sendgrid-api-key --data-file=-
 ```
 
+*(If testing without a SendGrid account, pass a placeholder string like `SG.dummy_key` and set `DRY_RUN_MODE=true` in Cloud Run).*
+
 ### Step 4.2: Build and Deploy to Cloud Run
 
-Deploy the application web service to Cloud Run exposing the HTTP server on port
-8080:
+Deploy the application web service to Cloud Run. Cloud Run automatically uses the included [`Dockerfile`](Dockerfile) to build the container:
 
 ```bash
 gcloud run deploy daily-news-agent-runner \
@@ -176,8 +177,7 @@ curl -X GET https://daily-news-agent-runner-xyz.a.run.app/healthz
 
 ### Step 5.1: Grant Discovery Engine Invoker IAM Permissions
 
-Grant the Gemini Enterprise Discovery Engine service account permission to
-invoke the Cloud Run service:
+Grant the Gemini Enterprise Discovery Engine service account permission to invoke the Cloud Run service:
 
 ```bash
 export PROJECT_NUMBER=$(gcloud projects describe your-gcp-project-id --format="value(projectNumber)")
@@ -235,8 +235,7 @@ agent.register_user(
 
 ### Step 6.2: Trigger Manual Pipeline Run
 
-Trigger the pipeline POST endpoint to verify search, HTML rendering, and email
-dispatch:
+Trigger the pipeline POST endpoint to verify search, HTML rendering, and email dispatch:
 
 ```bash
 curl -X POST https://daily-news-agent-runner-xyz.a.run.app/run-pipeline
@@ -246,15 +245,11 @@ curl -X POST https://daily-news-agent-runner-xyz.a.run.app/run-pipeline
 
 ## 7. Troubleshooting
 
-| Issue              | Cause             | Solution                           |
-| :----------------- | :---------------- | :--------------------------------- |
-| **HTTP 403 on      | Missing IAM OIDC  | Ensure `roles/run.invoker` is      |
-: Cloud Scheduler    : permissions       : granted to                         :
-: Trigger**          :                   : `scheduler_service_account_email`. :
-| **SendGrid 401     | Invalid API Key   | Verify key in Secret Manager:      |
-: Unauthorized**     :                   : `gcloud secrets versions access    :
-:                    :                   : latest --secret=sendgrid-api-key`. :
-| **Stale Lock Stuck | Cloud Run         | Pipelines automatically clean up   |
-: Records**          : crash/timeout     : records stuck > 30 mins via        :
-:                    :                   : `cleanup_stale_locks()`.           :
-| **`invalid token JSON from metadata: EOF`** | Cloud Shell metadata server token cache expired | Run `export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)` to pass token directly. |
+| Issue | Cause | Solution |
+| :--- | :--- | :--- |
+| **`invalid token JSON from metadata: EOF`** | Cloud Shell metadata server token cache expired | Run `export GOOGLE_OAUTH_ACCESS_TOKEN=$(gcloud auth print-access-token)` in Cloud Shell. |
+| **Cloud Build Permission Denied** | Compute SA missing IAM builder roles | Grant `storage.admin`, `cloudbuild.builds.builder`, `artifactregistry.writer`, and `logging.logWriter` to `${PROJECT_NUMBER}-compute@developer.gserviceaccount.com`. |
+| **HTTP 403 on Cloud Scheduler Trigger** | Missing IAM OIDC permissions | Ensure `roles/run.invoker` is granted to `daily-news-scheduler@<project-id>.iam.gserviceaccount.com`. |
+| **SendGrid 401 Unauthorized** | Invalid API Key | Verify key in Secret Manager or set `DRY_RUN_MODE=true` in Cloud Run env vars. |
+| **Stale Lock Stuck Records** | Cloud Run crash/timeout | Pipelines automatically clean up records stuck > 30 mins via `cleanup_stale_locks()`. |
+| **Gemini Enterprise Registration Error** | Missing Discovery Engine Editor | Verify user has `roles/discoveryengine.editor` permissions in GCP Console. |

@@ -49,6 +49,36 @@ gcloud services enable \
 gcloud firestore databases create --location=us-central1 --type=firestore-native
 ```
 
+### Configure Service Agent IAM Roles
+
+The Reasoning Engine and Custom Code Service Agents require access to Firestore and Secret Manager to run database operations and retrieve configs at runtime.
+
+Run the following commands in your terminal:
+
+```bash
+# 1. Set your Project ID and Project Number
+export PROJECT_ID="your-gcp-project-id"
+export PROJECT_NUMBER="your-gcp-project-number"
+
+# 2. Grant Firestore permissions to the Service Agents
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-aiplatform-re.iam.gserviceaccount.com" \
+  --role="roles/datastore.user"
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-aiplatform-cc.iam.gserviceaccount.com" \
+  --role="roles/datastore.user"
+
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/datastore.user"
+
+# 3. Grant Secret Manager access to the Reasoning Engine Service Agent
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+  --member="serviceAccount:service-${PROJECT_NUMBER}@gcp-sa-aiplatform-re.iam.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
 --------------------------------------------------------------------------------
 
 ## 2. Local Setup & Building
@@ -164,11 +194,14 @@ ls -a .gcloudignore .gitignore
 
 #### Deploying to Managed Agent Runtime (Option A)
 
+The agent dynamically retrieves the SendGrid API key from Secret Manager at runtime, so you do not need to pass it during deployment. However, you must configure `DRY_RUN_MODE=false` and specify your verified sender email address:
+
 ```bash
 agents-cli deploy \
   --project ${PROJECT_ID} \
   --region us-central1 \
   --deployment-target agent_runtime \
+  --update-env-vars DRY_RUN_MODE=false,SENDGRID_SENDER_EMAIL="your_verified_sender@domain.com" \
   --no-confirm-project \
   --no-wait
 ```
@@ -180,6 +213,7 @@ agents-cli deploy \
   --project ${PROJECT_ID} \
   --region us-central1 \
   --deployment-target cloud_run \
+  --update-env-vars DRY_RUN_MODE=false,SENDGRID_SENDER_EMAIL="your_verified_sender@domain.com" \
   --no-confirm-project \
   --no-wait
 ```

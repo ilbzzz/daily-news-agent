@@ -17,7 +17,7 @@ provider "google" {
 resource "google_secret_manager_secret" "sendgrid_api_key" {
   secret_id = "sendgrid-api-key"
   replication {
-    automatic = true
+    auto {}
   }
 }
 

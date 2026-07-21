@@ -212,18 +212,9 @@ gcloud run services add-iam-policy-binding daily-news-agent-runner \
 
 Publish the agent to your Gemini Enterprise App:
 
-#### Option A: ADK Reasoning Engine Mode (Default)
+#### Option A: A2A (Agent-to-Agent) Mode for Cloud Run Deployments (Recommended)
 
-```bash
-agents-cli publish gemini-enterprise \
-  --registration-type adk \
-  --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app \
-  --display-name "Daily Top News Summary AI Agent" \
-  --description "Personalized daily news digest agent delivering 8:00 AM summaries." \
-  --tool-description "Searches verified news, synthesizes takeaways, and dispatches HTML email digests."
-```
-
-#### Option B: A2A (Agent-to-Agent) Mode on Cloud Run
+When deployed on Cloud Run, register your agent using the A2A protocol and agent card endpoint:
 
 ```bash
 export SERVICE_URL=$(gcloud run services describe daily-news-agent-runner --region us-central1 --format="value(status.url)")
@@ -232,7 +223,21 @@ agents-cli publish gemini-enterprise \
   --registration-type a2a \
   --agent-card-url ${SERVICE_URL}/.well-known/agent-card.json \
   --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app \
-  --display-name "Daily Top News Summary AI Agent (A2A)"
+  --display-name "Daily Top News Summary AI Agent"
+```
+
+#### Option B: ADK Reasoning Engine Mode (for Vertex AI Reasoning Engine Deployments)
+
+If deployed via Vertex AI Reasoning Engine / Agent Runtime:
+
+```bash
+agents-cli publish gemini-enterprise \
+  --registration-type adk \
+  --agent-engine-id projects/${PROJECT_ID}/locations/us-central1/reasoningEngines/your-reasoning-engine-id \
+  --gemini-enterprise-app-id projects/${PROJECT_ID}/locations/global/collections/default_collection/engines/daily-news-app \
+  --display-name "Daily Top News Summary AI Agent" \
+  --description "Personalized daily news digest agent delivering 8:00 AM summaries." \
+  --tool-description "Searches verified news, synthesizes takeaways, and dispatches HTML email digests."
 ```
 
 --------------------------------------------------------------------------------

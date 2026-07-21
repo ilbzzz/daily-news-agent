@@ -33,7 +33,16 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
               "Personalized daily news digest agent delivering 8:00 AM summaries."
           ),
           "version": "1.0.0",
+          "defaultInputModes": ["text"],
+          "defaultOutputModes": ["text"],
           "capabilities": {"streaming": False},
+          "skills": [{
+              "name": "run_daily_pipeline",
+              "description": (
+                  "Triggers news collection, takeaway synthesis, and email"
+                  " dispatch."
+              ),
+          }],
           "tools": [{
               "name": "run_daily_pipeline",
               "description": (

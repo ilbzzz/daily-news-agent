@@ -28,6 +28,7 @@ class NewsAgentRequestHandler(BaseHTTPRequestHandler):
     if self.path in ("/.well-known/agent-card.json", "/agent-card.json"):
       self._set_headers(200)
       card_payload = {
+          "protocolVersion": "1.0",
           "name": "Daily Top News Summary AI Agent",
           "description": (
               "Personalized daily news digest agent delivering 8:00 AM summaries."

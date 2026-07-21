@@ -65,6 +65,10 @@ gcloud projects add-iam-policy-binding your-gcp-project-id \
 gcloud projects add-iam-policy-binding your-gcp-project-id \
   --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
   --role="roles/logging.logWriter"
+
+gcloud projects add-iam-policy-binding your-gcp-project-id \
+  --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
 ```
 
 --------------------------------------------------------------------------------

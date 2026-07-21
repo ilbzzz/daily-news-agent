@@ -74,5 +74,35 @@ class TestMainRequestHandler(unittest.TestCase):
     self.assertEqual(handler.response_status, 404)
 
 
+class TestDailyNewsAgent(unittest.TestCase):
+  """Test suite for DailyNewsAgent conversational query method signature."""
+
+  def test_query_polymorphic_arguments(self):
+    """Verifies query() accepts prompt, input, message, and arbitrary kwargs without raising TypeError."""
+    from app.agent import DailyNewsAgent
+
+    agent = DailyNewsAgent()
+
+    # 1. Test prompt argument
+    res1 = agent.query(prompt="Subscribe test@example.com")
+    self.assertIn("register", res1.lower())
+
+    # 2. Test input argument (used by Vertex AI Reasoning Engine / agents-cli)
+    res2 = agent.query(input="Register test@example.com")
+    self.assertIn("register", res2.lower())
+
+    # 3. Test message argument
+    res3 = agent.query(message="Subscribe test@example.com")
+    self.assertIn("register", res3.lower())
+
+    # 4. Test structured dict input
+    res4 = agent.query(input={"text": "Hello world"})
+    self.assertIn("Daily News AI Agent received your request", res4)
+
+    # 5. Test arbitrary kwargs
+    res5 = agent.query(user_input="General question")
+    self.assertIn("Daily News AI Agent received your request", res5)
+
+
 if __name__ == "__main__":
   unittest.main()
